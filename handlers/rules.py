@@ -2,7 +2,7 @@ from aiogram import F, Router, types
 from keyboards.rules import generate_rules, generate_prohibited_kb, generate_allowed_kb
 from config import PROHIBITED_KEYWORDS, ALLOWED_KEYWORDS, BOXES, MANAGER_PHONE, MANAGER_TG_ID
 from aiogram.types import CallbackQuery
-
+from handlers.box import RentBox
 
 router = Router()
 
@@ -30,7 +30,7 @@ async def rule(message: types.Message):
     await message.answer(text, reply_markup=generate_rules())
 
 
-@router.message(F.text)
+@router.message(RentBox.volume)
 async def check_item(message: types.Message):
     text = message.text.lower()
     prohibited_found = [kw for kw in PROHIBITED_KEYWORDS if kw.lower() in text]
