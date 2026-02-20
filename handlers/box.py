@@ -9,6 +9,7 @@ from keyboards.box import (
     generate_location_kb
 )
 from config import BOXES, DELIVERY_SETTINGS, DB
+from database.repository import create_order, get_or_create_user
 
 
 router = Router()
@@ -201,6 +202,17 @@ async def process_contact(message: types.Message, state: FSMContext):
     )
 
     await message.answer(summary)
+    # Получаем пользователяз
+    user = await get_or_create_user(message.from_user.id)
+    # Создаём заказ в БД
+    await create_order(
+        user_id=user.id,
+        volume=volume,
+        delivery_type=delivery,
+        phone=contact,
+        estimated_price=price,
+        address=address
+    )
 
     # Отправка заявки менеджеру
     manager_id = DB.get("meta", {}).get("manager_telegram_id")
