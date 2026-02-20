@@ -5,6 +5,7 @@ from aiogram.filters import Command
 from keyboards.menu import main_menu_kb
 from aiogram.types import FSInputFile
 from config import PD_PDF_PATH
+from database.repository import get_or_create_user
 
 
 router = Router()
@@ -12,6 +13,7 @@ router = Router()
 
 @router.message(Command("start"))
 async def start_bot(message: types.Message):
+
     pdf = FSInputFile(PD_PDF_PATH)
 
     await message.answer_document(
@@ -20,6 +22,8 @@ async def start_bot(message: types.Message):
             "Перед началом работы с ботом ознакомьтесь, пожалуйста,\nс согласием на обработку персональных данных."
         )
     )
+
+    await get_or_create_user(message.from_user.id)
 
     await message.answer(
         f"{message.from_user.full_name}, Вас приветствует сервис SelfStorage! Помогаю удобно хранить вещи в небольших боксах — быстро, надёжно и по выгодной цене.\n"

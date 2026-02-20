@@ -4,10 +4,11 @@ from decouple import config as env
 
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = Path(env("DB_PATH"))
+DB_PATH = env("DB_PATH")
 
+CONFIG_PATH = BASE_DIR / "config.json"
 
-with open(DB_PATH, "r", encoding="utf-8") as f:
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     DB = json.load(f)
 
 
@@ -20,3 +21,11 @@ BOXES = DB["tariffs"]["boxes"]
 DELIVERY_SETTINGS = DB["tariffs"]["delivery"]
 MANAGER_PHONE = DB["meta"]["manager_phone"]
 MANAGER_TG_ID = DB["meta"]["manager_telegram_id"]
+
+ORDER_STATUSES = {
+    "CREATED": "Создан",
+    "CONFIRMED": "Подтверждён",
+    "IN_STORAGE": "На хранении",
+    "COMPLETED": "Завершён",
+    "CANCELLED": "Отменён"
+}

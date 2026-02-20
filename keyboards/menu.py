@@ -6,7 +6,8 @@ def main_menu_kb():
         keyboard=[
             [
                 KeyboardButton(text="О нас"),
-                KeyboardButton(text="Профиль")
+                KeyboardButton(text="Профиль"),
+                KeyboardButton(text="Мои заказы")
             ],
             [
                 KeyboardButton(text="Правила хранения"),

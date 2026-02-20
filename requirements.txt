@@ -1,2 +1,4 @@
 aiogram==3.24.0
 python-decouple==3.8
+sqlalchemy==2.0.35
+aiosqlite==0.20.0
