@@ -87,10 +87,10 @@ async def pick_box(callback: CallbackQuery):
     
     for box in BOXES:
         text += (
-            f"📦 {box['name']}\n"
-            f"   Размер: {box['size']} ({box['dimensions']})\n"
-            f"   Цена: {box['price_per_month']} руб/мес\n"
-            f"   Описание: {box['description']}\n\n"
+            f"{box['name']}\n"
+            f"Размер: {box['size']} ({box['dimensions']})\n"
+            f"Цена: {box['price_per_month']} руб/мес\n"
+            f"Описание: {box['description']}\n\n"
         )
     
     text += "Чтобы забронировать, нажмите 'Связаться с оператором'."
@@ -104,7 +104,7 @@ async def contact_operator(callback: CallbackQuery):
     tg_link = f"tg://user?id={MANAGER_TG_ID}"
     
     text = (
-        "📞 <b>Связь с оператором</b>\n\n"
+        "Связь с оператором\n\n"
         f"Телефон: <a href=\"tel:{MANAGER_PHONE}\">{MANAGER_PHONE}</a>\n"
         f"Telegram: <a href=\"{tg_link}\">Написать менеджеру</a>\n\n"
         "Наш менеджер поможет подобрать бокс, ответить на вопросы по условиям хранения или оформить заказ."

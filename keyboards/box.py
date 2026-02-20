@@ -42,7 +42,7 @@ def generate_boxes_kb():
             )
         ])
     buttons.append([
-        InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_delivery")
+        InlineKeyboardButton(text="Назад", callback_data="back_to_delivery")
     ])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
@@ -52,8 +52,8 @@ def generate_boxes_kb():
 def generate_confirm_kb():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="✅ Выбрать этот бокс", callback_data="confirm_box"),
-            InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_boxes")
+            InlineKeyboardButton(text="Выбрать этот бокс", callback_data="confirm_box"),
+            InlineKeyboardButton(text="Назад", callback_data="back_to_boxes")
         ]
     ])
     return keyboard

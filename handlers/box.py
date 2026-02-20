@@ -16,19 +16,18 @@ router = Router()
 
 
 class RentBox(StatesGroup):
-    delivery_method = State()  # Привезу сам / Закажите вывоз
-    address = State()           # Адрес / геолокация
-    volume = State()            # Маленький / Средний / Большой / Список / Фото
-    contact = State()           # Телефон
-    selected_box = State()      # Выбранный бокс
+    delivery_method = State()
+    address = State()
+    volume = State()
+    contact = State()
+    selected_box = State()
 
 
 @router.message(F.text == "Арендовать бокс")
-@router.callback_query(F.data == "pick_box")  # Добавляем обработку из кнопки "Подобрать бокс"
+@router.callback_query(F.data == "pick_box")
 async def start_rent_box(event: types.Message | types.CallbackQuery, state: FSMContext):
     await state.clear()
-    
-    # Определяем, откуда пришел вызов (message или callback)
+
     if isinstance(event, types.CallbackQuery):
         message = event.message
         await event.answer()
@@ -95,7 +94,6 @@ async def process_volume_custom(message: types.Message, state: FSMContext):
 
 @router.message(RentBox.volume)
 async def process_volume_text(message: types.Message, state: FSMContext):
-    # Ловим любой текст после запроса списка/фото
     await state.update_data(volume=message.text)
     await show_boxes(message, state)
 
@@ -104,24 +102,22 @@ async def show_boxes(message: types.Message, state: FSMContext):
     data = await state.get_data()
     delivery = data.get("delivery_method", "Привезу сам")
     
-    text = "📋 Расчёт стоимости аренды бокса:\n\n"
-    text += "🚚 Способ доставки: "
+    text = "Расчёт стоимости аренды бокса:\n\n"
+    text += "Способ доставки: "
     if delivery == "Привезу сам":
         text += "Самовывоз (скидка 20%)\n\n"
     else:
         text += "Вывоз силами склада\n\n"
     
-    text += "📦 Доступные боксы:\n\n"
+    text += "Доступные боксы:\n\n"
     
     for box in BOXES:
         price = box["price_per_month"]
         if delivery == "Закажите вывоз":
-            # При заказе вывоза - полная цена
             price_text = f"{price} ₽/мес"
         else:
-            # При самовывозе — скидка 20%
             discounted_price = int(price * DELIVERY_SETTINGS["self_delivery_discount"])
-            price_text = f"{discounted_price} ₽/мес <s>{price} ₽</s> (со скидкой)"
+            price_text = f"{discounted_price} ₽/мес {price} ₽ (со скидкой)"
         
         text += (
             f"▫️ {box['name']}\n"
@@ -131,7 +127,7 @@ async def show_boxes(message: types.Message, state: FSMContext):
             f"   Описание: {box['description']}\n\n"
         )
 
-    text += "👉 Выберите бокс из списка ниже:"
+    text += "Выберите бокс из списка ниже:"
     await message.answer(text, reply_markup=generate_boxes_kb())
 
 
@@ -154,10 +150,10 @@ async def process_select_box(callback: types.CallbackQuery, state: FSMContext):
             price_note = f"{price} ₽/мес"
         
         await callback.message.answer(
-            f"✅ Вы выбрали: {box['name']}\n"
-            f"📏 Размер: {box['size']}\n"
-            f"📐 Габариты: {box['dimensions']}\n"
-            f"💰 Стоимость: {price_note}\n\n"
+            f"Вы выбрали: {box['name']}\n"
+            f"Размер: {box['size']}\n"
+            f"Габариты: {box['dimensions']}\n"
+            f"Стоимость: {price_note}\n\n"
             f"Описание: {box['description']}\n\n"
             "Подтвердите выбор или вернитесь назад:",
             reply_markup=generate_confirm_kb()
@@ -168,7 +164,7 @@ async def process_select_box(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "confirm_box")
 async def process_confirm_box(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.answer(
-        "📱 Пожалуйста, оставьте ваш контактный номер телефона для связи:\n"
+        "Пожалуйста, оставьте ваш контактный номер телефона для связи:\n"
         "(Например: +7 918 123-45-67)"
     )
     await callback.answer()
@@ -191,14 +187,14 @@ async def process_contact(message: types.Message, state: FSMContext):
         price = int(price * DELIVERY_SETTINGS["self_delivery_discount"])
 
     summary = (
-        "📋 Заявка на аренду бокса:\n\n"
-        f"📦 Бокс: {box.get('name', 'Не выбран')} ({box.get('size', '')})\n"
-        f"💰 Стоимость: {price} ₽/мес\n"
-        f"🚚 Способ доставки: {delivery}\n"
-        f"📍 Адрес: {address}\n"
-        f"📦 Объём: {volume}\n"
-        f"📱 Телефон: {contact}\n\n"
-        "✅ Ваша заявка отправлена! Наш менеджер свяжется с вами в ближайшее время."
+        "Заявка на аренду бокса:\n\n"
+        f"Бокс: {box.get('name', 'Не выбран')} ({box.get('size', '')})\n"
+        f"Стоимость: {price} ₽/мес\n"
+        f"Способ доставки: {delivery}\n"
+        f"Адрес: {address}\n"
+        f"Объём: {volume}\n"
+        f"Телефон: {contact}\n\n"
+        "Ваша заявка отправлена! Наш менеджер свяжется с вами в ближайшее время."
     )
 
     await message.answer(summary)
@@ -214,13 +210,12 @@ async def process_contact(message: types.Message, state: FSMContext):
         address=address
     )
 
-    # Отправка заявки менеджеру
     manager_id = DB.get("meta", {}).get("manager_telegram_id")
     if manager_id:
         try:
             await message.bot.send_message(
                 manager_id,
-                f"🔔 Новая заявка на аренду!\n\n{summary}"
+                f"Новая заявка на аренду!\n\n{summary}"
             )
         except Exception:
             pass
