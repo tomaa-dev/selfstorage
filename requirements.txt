@@ -2,3 +2,6 @@ aiogram==3.24.0
 python-decouple==3.8
 sqlalchemy==2.0.35
 aiosqlite==0.20.0
+qrcode==8.2
+python-telegram-bot==22.6
+environs==14.2.0
