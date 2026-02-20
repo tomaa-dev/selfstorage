@@ -63,7 +63,7 @@ def generate_location_kb():
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📍 Отправить геолокацию", request_location=True)],
-            [KeyboardButton(text="✍️ Ввести адрес вручную")]
+
         ],
         resize_keyboard=True
     )
