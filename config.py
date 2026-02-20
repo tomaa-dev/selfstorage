@@ -4,10 +4,11 @@ from decouple import config as env
 
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = Path(env("DB_PATH"))
+DB_PATH = env("DB_PATH")
 
+CONFIG_PATH = BASE_DIR / "config.json"
 
-with open(DB_PATH, "r", encoding="utf-8") as f:
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     DB = json.load(f)
 
 
