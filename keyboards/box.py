@@ -78,3 +78,17 @@ def generate_request_contact_kb():
         one_time_keyboard=True
     )
     return keyboard
+
+
+def get_promocode_kb():
+    decline_btn = InlineKeyboardButton(
+        text="Пропустить",
+        callback_data="skip_promocode"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [decline_btn],
+        ]
+    )
+    return keyboard

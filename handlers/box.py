@@ -7,11 +7,13 @@ from keyboards.box import (
     generate_delivery_method_for_measurements_kb,
     generate_boxes_kb,
     generate_confirm_kb,
-    generate_request_contact_kb
+    generate_request_contact_kb,
+    get_promocode_kb
 )
 from decouple import config
-from config import BOXES, DELIVERY_SETTINGS, DB
+from config import BOXES, DELIVERY_SETTINGS, DB, PROMO_CODES
 from database.repository import create_order, get_or_create_user
+from datetime import datetime
 
 
 router = Router()
@@ -22,6 +24,8 @@ class RentBox(StatesGroup):
     address = State()
     volume = State()
     contact = State()
+    email = State()
+    promocode = State()
     selected_box = State()
 
 
@@ -85,7 +89,7 @@ async def process_select_box(callback: types.CallbackQuery, state: FSMContext):
 async def process_need_measurements(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.answer(
         "Замеры будут произведены при вывозе ваших вещей\n\n"
-        "Специалист приедет к вам, оценит объём и поможет подобрать оптимальный размер бокса."
+        "Специалист приедет к вам, оценит объём и поможет подобрать оптимальный размер бокса.",
         reply_markup=generate_delivery_method_for_measurements_kb()
     )
 
@@ -123,12 +127,88 @@ async def process_contact(message: types.Message, state: FSMContext):
         contact = message.text
 
     await state.update_data(contact=contact)
+
+    await message.answer(
+        "Укажите вашу электронную почту для отправки уведомлений:",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    await state.set_state(RentBox.email)
+
+
+@router.message(RentBox.email)
+async def process_email(message: types.Message, state: FSMContext):
+    await state.update_data(email=message.text)
+
+    await message.answer(
+        "Есть промокод? Введите его для получения скидки:",
+        reply_markup=get_promocode_kb()
+    )
+    await state.set_state(RentBox.promocode)
+
+
+@router.callback_query(F.data == "skip_promocode")
+async def process_skip_promocode(callback: types.CallbackQuery, state: FSMContext):
+    await state.update_data(promocode=None, discount_percent=0)
+    await callback.answer()
+    await process_final_summary(callback.message, state)
+
+
+@router.message(RentBox.promocode)
+async def process_promocode(message: types.Message, state: FSMContext):
+    users_promocode = message.text.strip().lower()
+
+    promo_found = None
+    for promo in PROMO_CODES:
+        if promo["code"].lower() == users_promocode and promo.get("is_active", True):
+            promo_found = promo
+            break
     
+    if promo_found:
+        today = datetime.now().strftime("%Y-%m-%d")
+        active_from = promo_found.get("active_from", "")
+        active_to = promo_found.get("active_to", "")
+        
+        is_valid = True
+        if active_from and today < active_from:
+            is_valid = False
+        if active_to and today > active_to:
+            is_valid = False
+
+        if is_valid:
+            discount_percent = promo_found["discount_percent"]
+            await message.answer(
+                f"Поздравляем! Вы получили скидку {discount_percent}%",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            await state.update_data(
+                promocode=users_promocode, 
+                discount_percent=discount_percent
+            )
+        else:
+            await message.answer(
+                "К сожалению, срок действия этого промокода истёк.",
+                reply_markup=get_promocode_kb()
+            )
+            return
+    else:
+        await message.answer(
+            "К сожалению, такого промокода не существует.\n"
+            "Попробуйте ещё раз или нажмите «Пропустить»:",
+            reply_markup=get_promocode_kb()
+        )
+        return
+    await process_final_summary(message, state)
+
+
+async def process_final_summary(message: types.Message, state: FSMContext):
     data = await state.get_data()
     box = data.get("selected_box") or {}
     delivery = data.get("delivery_method", "Привезу сам")
     address = data.get("address", "Не указан")
+    contact = data.get("contact", "Не указан")
+    email = data.get("email")
     need_measurements = data.get("need_measurements", False)
+    discount_percent = data.get("discount_percent", 0)
 
     if need_measurements:
         volume_text = "Требуются замеры"
@@ -137,9 +217,15 @@ async def process_contact(message: types.Message, state: FSMContext):
     else:
         volume_text = f"{box.get('name', '')} ({box.get('size', '')})"
         price = box.get("price_per_month", 0)
+
         if delivery == "Привезу сам":
             price = int(price * DELIVERY_SETTINGS["self_delivery_discount"])
-        price_text = f"{price} ₽/мес"
+
+        if discount_percent > 0:
+            price = int(price * (100 - discount_percent) / 100)
+            price_text = f"{price} ₽/мес (скидка {discount_percent}%)"
+        else:
+            price_text = f"{price} ₽/мес"
 
     summary = (
         "Заявка на аренду бокса:\n\n"
@@ -147,11 +233,18 @@ async def process_contact(message: types.Message, state: FSMContext):
         f"Стоимость: {price_text}\n"
         f"Способ доставки: {delivery}\n"
         f"Адрес: {address}\n"
-        f"Телефон: {contact}\n\n"
-        "Ваша заявка отправлена! Наш менеджер свяжется с вами в ближайшее время."
+        f"Телефон: {contact}\n"
+        f"Почта: {email}\n"
     )
 
-    await message.answer(summary)
+    if discount_percent > 0:
+        summary += f"Промокод: {data.get('promocode', '')} (-{discount_percent}%)\n"
+    summary += "\nВаша заявка отправлена! Наш менеджер свяжется с вами в ближайшее время."
+    
+    await message.answer(
+        summary, 
+        reply_markup=ReplyKeyboardRemove()
+    )
 
     user = await get_or_create_user(message.from_user.id)
 
@@ -161,7 +254,10 @@ async def process_contact(message: types.Message, state: FSMContext):
         delivery_type=delivery,
         phone=contact,
         estimated_price=price,
-        address=address
+        address=address,
+        email=email,
+        promocode=data.get("promocode"),
+        discount_percent=discount_percent
     )
 
     manager_id = config('ADMIN_CHAT_ID')
