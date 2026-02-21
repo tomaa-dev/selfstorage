@@ -21,6 +21,7 @@ class RentBox(StatesGroup):
     volume = State()            # Маленький / Средний / Большой / Список / Фото
     contact = State()           # Телефон
     selected_box = State()      # Выбранный бокс
+    fio = State()               # фамилия имя отчество
 
 
 @router.message(F.text == "Арендовать бокс")
@@ -168,11 +169,24 @@ async def process_select_box(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "confirm_box")
 async def process_confirm_box(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.answer(
+        "Введите ваше ФИО:"
+    )
+
+    await state.set_state(RentBox.fio)
+    await callback.answer()
+
+
+@router.message(RentBox.fio)
+async def process_fio(message: types.Message, state: FSMContext):
+    await state.update_data(fio=message.text)
+
+    await message.answer(
         "📱 Пожалуйста, оставьте ваш контактный номер телефона для связи:\n"
         "(Например: +7 918 123-45-67)"
     )
-    await callback.answer()
+
     await state.set_state(RentBox.contact)
+    await message.answer()
 
 
 @router.message(RentBox.contact)
@@ -181,6 +195,7 @@ async def process_contact(message: types.Message, state: FSMContext):
     await state.update_data(contact=contact)
     
     data = await state.get_data()
+    fio = data.get("fio")
     box = data.get("selected_box", {})
     delivery = data.get("delivery_method", "Привезу сам")
     address = data.get("address", "Не указан")
@@ -196,7 +211,7 @@ async def process_contact(message: types.Message, state: FSMContext):
         f"💰 Стоимость: {price} ₽/мес\n"
         f"🚚 Способ доставки: {delivery}\n"
         f"📍 Адрес: {address}\n"
-        f"📦 Объём: {volume}\n"
+        f"📦 Размер: {volume}\n"
         f"📱 Телефон: {contact}\n\n"
         "✅ Ваша заявка отправлена! Наш менеджер свяжется с вами в ближайшее время."
     )
@@ -207,6 +222,7 @@ async def process_contact(message: types.Message, state: FSMContext):
     # Создаём заказ в БД
     await create_order(
         user_id=user.id,
+        fio=fio,
         volume=volume,
         delivery_type=delivery,
         phone=contact,

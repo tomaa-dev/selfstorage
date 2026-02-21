@@ -21,6 +21,7 @@ class Order(Base):  # заказы
 
     id: Mapped[int] = mapped_column(primary_key=True)  # ID заказа
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))  # связь пользователя с заказом
+    fio: Mapped[str] = mapped_column(String(20), nullable=True) # фамилия имя отчество
 
     volume: Mapped[str] = mapped_column(String(50))  # объем заказа
     delivery_type: Mapped[str] = mapped_column(String(20))  # способ доставки
@@ -31,8 +32,6 @@ class Order(Base):  # заказы
 
     estimated_price: Mapped[int] = mapped_column(Integer)  # цена до замеров
     final_price: Mapped[int] = mapped_column(Integer, nullable=True)  # финальная цена после замеров
-
-    status: Mapped[str] = mapped_column(String(20), default="CREATED")  # статус заказа
 
     reserve_until: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=True)  # резерв бокса
 

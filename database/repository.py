@@ -23,24 +23,29 @@ async def get_or_create_user(telegram_id: int): # поверка есть ли �
 
 async def create_order(  # создание заказа
     user_id: int,
+    fio: str,
     volume: str,
     delivery_type: str,
     phone: str,
     estimated_price: int,
     address: str | None = None,
-    preferred_time: str | None = None,
+    reserve_until: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ):
     async with async_session() as session:
 
         order = Order(
             user_id=user_id,
+            fio=fio,
             volume=volume,
             delivery_type=delivery_type,
             phone=phone,
             estimated_price=estimated_price,
             address=address,
-            preferred_time=preferred_time,
-            status="CREATED"
+            reserve_until=reserve_until,
+            start_date=start_date,
+            end_date=end_date
         )
 
         session.add(order)
@@ -90,33 +95,9 @@ async def get_all_orders():  # получить все заказы
         return result.scalars().all()
 
 
-async def get_overdue_orders(): # просроченые заказы
-    today = datetime.date.today()
-
-    async with async_session() as session:
-        result = await session.execute(
-            select(Order).where(
-                Order.end_date < today,
-                Order.status == "IN_STORAGE"
-            )
-        )
-        return result.scalars().all()
-
-
 async def get_all_phones(): # получить телефоны пользователей
     async with async_session() as session:
         result = await session.execute(
             select(Order.id, Order.phone)
         )
         return result.all()
-
-
-async def update_order_status(order_id: int, new_status: str):  # изменение статуса заказа
-    async with async_session() as session:
-        await session.execute(
-            update(Order)
-            .where(Order.id == order_id)
-            .values(status=new_status)
-        )
-
-        await session.commit()
