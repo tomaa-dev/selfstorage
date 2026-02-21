@@ -12,14 +12,15 @@ async def get_or_create_user(telegram_id: int): # поверка есть ли �
 
         user = result.scalar_one_or_none()
 
-        if not user:
-            user = User(telegram_id=telegram_id)
+        if user:
+            return user, False
 
+            user = User(telegram_id=telegram_id)
             session.add(user)
             await session.commit()
             await session.refresh(user)
 
-        return user
+        return user, True
 
 async def create_order(  # создание заказа
     user_id: int,
