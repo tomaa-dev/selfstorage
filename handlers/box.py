@@ -1,12 +1,12 @@
 from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from aiogram.types import ReplyKeyboardRemove
 from keyboards.box import (
     generate_delivery_method_kb,
     generate_volume_kb,
     generate_boxes_kb,
-    generate_confirm_kb,
-    generate_location_kb
+    generate_confirm_kb
 )
 from config import BOXES, DELIVERY_SETTINGS, DB
 from database.repository import create_order, get_or_create_user
@@ -45,21 +45,13 @@ async def start_rent_box(event: types.Message | types.CallbackQuery, state: FSMC
 async def process_delivery_method(message: types.Message, state: FSMContext):
     await state.update_data(delivery_method=message.text)
     await message.answer(
-        "Укажите адрес (город, улица, дом) или отправьте геолокацию:",
-        reply_markup=generate_location_kb()
+        "Укажите адрес (город, улица, дом):",
+        reply_markup=ReplyKeyboardRemove()
     )
     await state.set_state(RentBox.address)
 
 
-@router.message(RentBox.address, F.location)
-async def process_location(message: types.Location, state: FSMContext):
-    lat = message.location.latitude
-    lon = message.location.longitude
-    await state.update_data(address=f"Геолокация: {lat}, {lon}")
-    await ask_volume(message, state)
-
-
-@router.message(RentBox.address, F.text)
+@router.message(RentBox.address)
 async def process_address_text(message: types.Message, state: FSMContext):
     await state.update_data(address=message.text)
     await ask_volume(message, state)

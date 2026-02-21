@@ -57,14 +57,3 @@ def generate_confirm_kb():
         ]
     ])
     return keyboard
-
-
-def generate_location_kb():
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📍 Отправить геолокацию", request_location=True)],
-
-        ],
-        resize_keyboard=True
-    )
-    return keyboard
