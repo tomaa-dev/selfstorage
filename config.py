@@ -20,7 +20,6 @@ PD_PDF_PATH = BASE_DIR/"data"/DB["meta"]["pd_agreement"]["pdf_file"]
 BOXES = DB["tariffs"]["boxes"]
 DELIVERY_SETTINGS = DB["tariffs"]["delivery"]
 MANAGER_PHONE = DB["meta"]["manager_phone"]
-MANAGER_TG_ID = DB["meta"]["manager_telegram_id"]
 
 ORDER_STATUSES = {
     "CREATED": "Создан",

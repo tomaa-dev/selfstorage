@@ -1,8 +1,10 @@
 from aiogram import F, Router, types
 from keyboards.rules import generate_rules, generate_prohibited_kb, generate_allowed_kb
-from config import PROHIBITED_KEYWORDS, ALLOWED_KEYWORDS, BOXES, MANAGER_PHONE, MANAGER_TG_ID
+from decouple import config
+from config import PROHIBITED_KEYWORDS, ALLOWED_KEYWORDS, BOXES, MANAGER_PHONE
 from aiogram.types import CallbackQuery
 from handlers.box import RentBox
+
 
 router = Router()
 
@@ -101,7 +103,7 @@ async def pick_box(callback: CallbackQuery):
 
 @router.callback_query(F.data == "contact_operator")
 async def contact_operator(callback: CallbackQuery):
-    tg_link = f"tg://user?id={MANAGER_TG_ID}"
+    tg_link = f"tg://user?id={config(ADMIN_CHAT_ID)}"
     
     text = (
         "Связь с оператором\n\n"
