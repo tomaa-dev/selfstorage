@@ -1,19 +1,33 @@
+import uuid
+import os
+import tempfile
+from urllib.parse import urlencode
 from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import ReplyKeyboardRemove
+from aiogram.types import (
+    ReplyKeyboardRemove, 
+    InlineKeyboardMarkup, 
+    InlineKeyboardButton, 
+    FSInputFile
+)
 from keyboards.box import (
     generate_delivery_method_kb,
     generate_delivery_method_for_measurements_kb,
     generate_boxes_kb,
     generate_confirm_kb,
     generate_request_contact_kb,
-    get_promocode_kb
+    get_promocode_kb,
+    generate_payment_kb,
+    generate_payment_success_kb
 )
+from keyboards.menu import main_menu_kb
 from decouple import config
 from config import BOXES, DELIVERY_SETTINGS, DB, PROMO_CODES
-from database.repository import create_order, get_or_create_user
+from database.repository import create_order, get_or_create_user, get_order_by_id
 from datetime import datetime
+import qrcode
+from io import BytesIO
 
 
 router = Router()
@@ -27,6 +41,46 @@ class RentBox(StatesGroup):
     email = State()
     promocode = State()
     selected_box = State()
+    payment = State()
+    check_payment = State()
+
+
+def generate_payment_url(order_id: int, amount: int, description: str) -> str:
+    base_url = "https://paymaster.ru/payment/init"
+
+    params = {
+        "merchantId": "1744374395:TEST:ab1f8671217a68475132",
+        "amount": str(amount),
+        "currency": "RUB",
+        "orderId": str(order_id),
+        "description": description[:100],
+        "testMode": "1",
+    }
+    
+    return f"{base_url}?{urlencode(params)}"
+
+
+def urlencode(params: dict):
+    return "&".join([f"{k}={v}" for k, v in params.items()])
+
+
+def generate_qr_code_file(payment_url: str):
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(payment_url)
+    qr.make(fit=True)
+    
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    img.save(temp_file.name, 'PNG')
+    temp_file.close()
+    
+    return temp_file.name
 
 
 @router.message(F.text == "Арендовать бокс")
@@ -209,6 +263,8 @@ async def process_final_summary(message: types.Message, state: FSMContext):
     email = data.get("email")
     need_measurements = data.get("need_measurements", False)
     discount_percent = data.get("discount_percent", 0)
+    promocode = data.get("promocode")
+
 
     if need_measurements:
         volume_text = "Требуются замеры"
@@ -244,6 +300,19 @@ async def process_final_summary(message: types.Message, state: FSMContext):
             else:
                 price_text = f"{price} ₽/мес"
 
+    user = await get_or_create_user(message.from_user.id)
+
+    order = await create_order(
+        user_id=user.id,
+        volume=volume_text,
+        delivery_type=delivery,
+        phone=contact,
+        estimated_price=price,
+        address=address
+    )
+
+    order_id = order.id
+
     summary = (
         "Заявка на аренду бокса:\n\n"
         f"Бокс: {volume_text}\n"
@@ -254,41 +323,123 @@ async def process_final_summary(message: types.Message, state: FSMContext):
         f"Почта: {email}\n"
     )
 
-    if discount_percent > 0:
-        summary += f"Промокод: {data.get('promocode', '')} (-{discount_percent}%)\n"
-    summary += "\nВаша заявка отправлена! Наш менеджер свяжется с вами в ближайшее время."
-    
-    await message.answer(
-        summary, 
-        reply_markup=ReplyKeyboardRemove()
-    )
+    if discount_percent > 0 and promocode:
+        summary += f"Промокод: {promocode} (-{discount_percent}%)\n"
 
-    user = await get_or_create_user(message.from_user.id)
+    summary += f"\nНомер заказа: #{order_id}"
 
-    await create_order(
-        user_id=user.id,
-        volume=volume_text,
-        delivery_type=delivery,
-        phone=contact,
-        estimated_price=price,
-        address=address,
-        email=email,
-        promocode=data.get("promocode"),
-        discount_percent=discount_percent
-    )
+    if not need_measurements:
+        summary += "\n\nДля продолжения нажмите «Оплатить»"
+
+        payment_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="Оплатить",
+                        callback_data=f"pay_order_{order_id}"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="Оплатить позже",
+                        callback_data="back_to_main"
+                    )
+                ]
+            ]
+        )
+        
+        await message.answer(summary, reply_markup=payment_kb)
+    else:
+        summary += "\n\nВаша заявка отправлена! Наш менеджер свяжется с вами в ближайшее время."
+        await message.answer(summary, reply_markup=ReplyKeyboardRemove())
 
     manager_id = config('ADMIN_CHAT_ID')
     if manager_id:
         try:
             await message.bot.send_message(
                 manager_id,
-                f"Новая заявка на аренду!\n\n{summary}"
+                f"Новая заявка #{order_id}!\n\n{summary}"
             )
         except Exception:
             pass
 
     await state.clear()
-  
+
+
+@router.callback_query(F.data.startswith("pay_order_"))
+async def process_pay_order(callback: types.CallbackQuery, state: FSMContext):
+    order_id = int(callback.data.replace("pay_order_", ""))
+
+    order = await get_order_by_id(order_id)
+    
+    if not order:
+        await callback.message.answer("Заказ не найден")
+        await callback.answer()
+        return
+
+    description = f"Аренда бокса #{order_id}"
+
+    payment_url = generate_payment_url(
+        order_id=order_id,
+        amount=order.estimated_price,
+        description=description
+    )
+
+    qr_file_path = generate_qr_code_file(payment_url)
+
+    qr_image = FSInputFile(qr_file_path)
+
+    await callback.message.answer_photo(
+        photo=qr_image,
+        caption=(
+            f"Сканируйте QR-код для оплаты\n\n"
+            f"Заказ: #{order_id}\n"
+            f"Сумма: {order.estimated_price} ₽\n\n"
+            f"Описание: {description}\n"
+        ),
+        reply_markup=generate_payment_kb(order_id, payment_url)
+    )
+
+    try:
+        os.unlink(qr_file_path)
+    except:
+        pass
+    
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("check_payment_"))
+async def process_check_payment(callback: types.CallbackQuery, state: FSMContext):
+    order_id = int(callback.data.replace("check_payment_", ""))
+    
+    order = await get_order_by_id(order_id)
+    
+    if not order:
+        await callback.message.answer("Заказ не найден")
+        await callback.answer()
+        return
+
+    await callback.message.answer(
+        f"Оплата прошла успешно!\n\n"
+        f"Заказ: #{order_id}:\n\n"
+        f"Сумма: {order.estimated_price} ₽\n"
+        f"Статус оплаты: ОПЛАЧЕН\n\n"
+        f"Наш менеджер свяжется с вами в ближайшее время для уточнения деталей доставки.\n"
+        f"Спасибо за заказ!",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    
+    await callback.answer()
+
+
+@router.callback_query(F.data == "back_to_main")
+async def process_back_to_main(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.answer(
+        "Главное меню\n\n"
+        "Выберите действие:",
+        reply_markup=main_menu_kb()
+    )
+    await callback.answer()
 
 @router.callback_query(F.data == "back_to_boxes")
 async def process_back_to_boxes(callback: types.CallbackQuery, state: FSMContext):

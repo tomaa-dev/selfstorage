@@ -92,3 +92,49 @@ def get_promocode_kb():
         ]
     )
     return keyboard
+
+
+def generate_payment_kb(order_id: int, payment_url: str):
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Оплатить",
+                    url=payment_url
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Проверить оплату",
+                    callback_data=f"check_payment_{order_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="В главное меню",
+                    callback_data="back_to_main"
+                )
+            ]
+        ]
+    )
+    return keyboard
+
+
+def generate_payment_success_kb(order_id: int):
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Мои заказы",
+                    callback_data=f"my_orders_{order_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="В главное меню",
+                    callback_data="back_to_main"
+                )
+            ]
+        ]
+    )
+    return keyboard
