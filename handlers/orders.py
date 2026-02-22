@@ -15,13 +15,13 @@ async def my_orders(message: types.Message):
         await message.answer("У вас пока нет заказов.")
         return
 
-    text = "📦 Ваши заказы:\n\n"
+    text = "Ваши заказы:\n\n"
 
     for order in orders:
         status_ru = ORDER_STATUSES.get(order.status, order.status)
 
         text += (
-            f"🔹 Заказ №{order.id}\n"
+            f"Заказ №{order.id}\n"
             f"Объём: {order.volume}\n"
             f"Доставка: {order.delivery_type}\n"
             f"Статус: {status_ru}\n"
