@@ -213,19 +213,36 @@ async def process_final_summary(message: types.Message, state: FSMContext):
     if need_measurements:
         volume_text = "Требуются замеры"
         price = 0
-        price_text = "Будет определено после замеров"
+        price_text = "Будет определена после замеров"
     else:
         volume_text = f"{box.get('name', '')} ({box.get('size', '')})"
-        price = box.get("price_per_month", 0)
+        base_price = box.get("price_per_month", 0)
 
         if delivery == "Привезу сам":
-            price = int(price * DELIVERY_SETTINGS["self_delivery_discount"])
-
-        if discount_percent > 0:
-            price = int(price * (100 - discount_percent) / 100)
-            price_text = f"{price} ₽/мес (скидка {discount_percent}%)"
+            price_after_self_delivery = int(base_price * DELIVERY_SETTINGS["self_delivery_discount"])
+            self_delivery_discount = base_price - price_after_self_delivery
         else:
-            price_text = f"{price} ₽/мес"
+            price_after_self_delivery = base_price
+            self_delivery_discount = 0
+
+        
+        if discount_percent > 0:
+            price = int(price_after_self_delivery * (100 - discount_percent) / 100)
+            price_text = (
+                f"{price} ₽\n"
+                f"(базовая: {base_price} ₽/мес, "
+                f"самовывоз: -{self_delivery_discount} ₽, "
+                f"промокод: -{discount_percent}%)"
+            )
+        else:
+            price = price_after_self_delivery
+            if self_delivery_discount > 0:
+                price_text = (
+                    f"{price} ₽\n"
+                    f"(базовая: {base_price} ₽/мес, самовывоз: -{self_delivery_discount} ₽)"
+                )
+            else:
+                price_text = f"{price} ₽/мес"
 
     summary = (
         "Заявка на аренду бокса:\n\n"
