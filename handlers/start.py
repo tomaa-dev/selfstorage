@@ -23,8 +23,6 @@ async def start_bot(message: types.Message):
             )
     )
 
-    await get_or_create_user(message.from_user.id)
-
     await message.answer(
         f"{message.from_user.full_name}, Вас приветствует сервис SelfStorage! Помогаю удобно хранить вещи в небольших боксах — быстро, надёжно и по выгодной цене.\n"
         "Примеры использования:\n"

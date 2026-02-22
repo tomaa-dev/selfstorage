@@ -2,6 +2,7 @@ import datetime
 from sqlalchemy import select, update
 from database.session import async_session
 from database.models import User, Order, PromoCode
+from sqlalchemy import func
 
 async def get_or_create_user(telegram_id: int): # поверка есть ли пользователь или нет
     async with async_session() as session:
@@ -15,10 +16,10 @@ async def get_or_create_user(telegram_id: int): # поверка есть ли �
         if user:
             return user, False
 
-            user = User(telegram_id=telegram_id)
-            session.add(user)
-            await session.commit()
-            await session.refresh(user)
+        user = User(telegram_id=telegram_id)
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
 
         return user, True
 
@@ -33,6 +34,7 @@ async def create_order(  # создание заказа
     reserve_until: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    promo_code: str | None = None,
 ):
     async with async_session() as session:
 
@@ -46,7 +48,8 @@ async def create_order(  # создание заказа
             address=address,
             reserve_until=reserve_until,
             start_date=start_date,
-            end_date=end_date
+            end_date=end_date,
+            promo_code=promo_code
         )
 
         session.add(order)
@@ -102,3 +105,47 @@ async def get_all_phones(): # получить телефоны пользова
             select(Order.id, Order.phone)
         )
         return result.all()
+
+# промокод
+async def create_promo(code: str, discount_percent: int):
+    async with async_session() as session:
+        promo = PromoCode(
+            code=code,
+            discount_percent=discount_percent,
+            is_active=True
+        )
+        session.add(promo)
+        await session.commit()
+
+
+async def get_all_promo():
+    async with async_session() as session:
+        result = await session.execute(select(PromoCode).order_by(PromoCode.id.desc()))
+        return result.scalars().all()
+
+
+async def set_promo_active(code: str, active: bool):
+    async with async_session() as session:
+        await session.execute(
+            update(PromoCode)
+            .where(PromoCode.code == code)
+            .values(is_active=active)
+        )
+        await session.commit()
+
+
+async def count_orders_by_promo(code: str) -> int:
+    async with async_session() as session:
+        result = await session.execute(
+            select(func.count(Order.id)).where(Order.promo_code == code)
+        )
+        return result.scalar_one()
+
+async def increase_promo_usage(code: str):
+    async with async_session() as session:
+        await session.execute(
+            update(PromoCode)
+            .where(PromoCode.code == code)
+            .values(usage_count=PromoCode.usage_count + 1)
+        )
+        await session.commit()

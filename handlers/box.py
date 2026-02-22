@@ -9,7 +9,7 @@ from keyboards.box import (
     generate_location_kb
 )
 from config import BOXES, DELIVERY_SETTINGS, DB
-from database.repository import create_order, get_or_create_user
+from database.repository import create_order, get_or_create_user, get_valid_promo, increase_promo_usage
 
 
 router = Router()
@@ -22,6 +22,7 @@ class RentBox(StatesGroup):
     contact = State()           # Телефон
     selected_box = State()      # Выбранный бокс
     fio = State()               # фамилия имя отчество
+    promo = State()
 
 
 @router.message(F.text == "Арендовать бокс")
@@ -186,24 +187,46 @@ async def process_fio(message: types.Message, state: FSMContext):
     )
 
     await state.set_state(RentBox.contact)
-    await message.answer()
+
 
 
 @router.message(RentBox.contact)
 async def process_contact(message: types.Message, state: FSMContext):
-    contact = message.text
-    await state.update_data(contact=contact)
-    
+    await state.update_data(contact=message.text)
+
+    await message.answer("Введите промокод (если есть) или напишите 'нет':")
+
+    await state.set_state(RentBox.promo)
+
+@router.message(RentBox.promo)
+async def process_promo(message: types.Message, state: FSMContext):
+    promo_code = message.text.strip()
+
     data = await state.get_data()
     fio = data.get("fio")
     box = data.get("selected_box", {})
     delivery = data.get("delivery_method", "Привезу сам")
     address = data.get("address", "Не указан")
     volume = data.get("volume", "Не указан")
-    
+    contact = data.get("contact")
+
     price = box.get("price_per_month", 0)
+
     if delivery == "Привезу сам":
         price = int(price * DELIVERY_SETTINGS["self_delivery_discount"])
+
+    applied_code = None
+
+    if promo_code.lower() != "нет":
+        promo = await get_valid_promo(promo_code)
+
+        if promo:
+            price = int(price * (1 - promo.discount_percent / 100))
+            await increase_promo_usage(promo_code)
+            applied_code = promo_code
+            await message.answer("Промокод применён!")
+        else:
+            await message.answer("Промокод недействителен.")
 
     summary = (
         "📋 Заявка на аренду бокса:\n\n"
@@ -212,13 +235,14 @@ async def process_contact(message: types.Message, state: FSMContext):
         f"🚚 Способ доставки: {delivery}\n"
         f"📍 Адрес: {address}\n"
         f"📦 Размер: {volume}\n"
-        f"📱 Телефон: {contact}\n\n"
+        f"📱 Телефон: {contact}\n"
+        f"🎁 Промокод: {applied_code if applied_code else 'нет'}\n\n"
         "✅ Ваша заявка отправлена! Наш менеджер свяжется с вами в ближайшее время."
     )
 
     await message.answer(summary)
     # Получаем пользователяз
-    user = await get_or_create_user(message.from_user.id)
+    user, created = await get_or_create_user(message.from_user.id)
     # Создаём заказ в БД
     await create_order(
         user_id=user.id,
@@ -227,7 +251,8 @@ async def process_contact(message: types.Message, state: FSMContext):
         delivery_type=delivery,
         phone=contact,
         estimated_price=price,
-        address=address
+        address=address,
+        promo_code=applied_code
     )
 
     # Отправка заявки менеджеру

@@ -6,7 +6,7 @@ router = Router()
 @router.message(F.text == "Мои заказы")
 async def my_orders(message: types.Message):
 
-    user = await get_or_create_user(message.from_user.id)
+    user, created = await get_or_create_user(message.from_user.id)
 
     orders = await get_user_orders(user.id)
 

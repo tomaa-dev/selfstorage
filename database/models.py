@@ -12,7 +12,6 @@ class User(Base):  # пользователи
 
     id: Mapped[int] = mapped_column(primary_key=True)  # ID пользователя
     telegram_id: Mapped[int] = mapped_column(unique=True, index=True)  # ID пользователя telegram
-    phone: Mapped[str] = mapped_column(String(20), nullable=True)  # телефон пользователя
     created_at: Mapped[datetime.date] = mapped_column(Date, default=datetime.date.today)  # дата регистрации пользователя
 
 
@@ -22,6 +21,7 @@ class Order(Base):  # заказы
     id: Mapped[int] = mapped_column(primary_key=True)  # ID заказа
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))  # связь пользователя с заказом
     fio: Mapped[str] = mapped_column(String(20), nullable=True) # фамилия имя отчество
+    promo_code: Mapped[str] = mapped_column(String(50), nullable=True)
 
     volume: Mapped[str] = mapped_column(String(50))  # объем заказа
     delivery_type: Mapped[str] = mapped_column(String(20))  # способ доставки
@@ -48,3 +48,5 @@ class PromoCode(Base):  # промокоды
     active_from: Mapped[datetime.date] = mapped_column(Date, nullable=True) # дата начала промокода
     active_to: Mapped[datetime.date] = mapped_column(Date, nullable=True) # дата оконччания промокода
     is_active: Mapped[bool] = mapped_column(default=True)  # активность промокода
+    is_advertising: Mapped[bool] = mapped_column(default=False) # реклама
+    usage_count: Mapped[int] = mapped_column(default=0) # количество использований
