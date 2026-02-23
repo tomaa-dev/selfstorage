@@ -11,7 +11,7 @@ def generate_delivery_method_kb():
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="Привезу сам")],
-            [KeyboardButton(text="Закажите самовывоз")]
+            [KeyboardButton(text="Заказать самовывоз")]
         ],
         resize_keyboard=True
     )
@@ -21,7 +21,7 @@ def generate_delivery_method_kb():
 def generate_delivery_method_for_measurements_kb():
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Закажите самовывоз")]
+            [KeyboardButton(text="Заказать самовывоз")]
         ],
         resize_keyboard=True
     )

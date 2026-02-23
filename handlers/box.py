@@ -23,7 +23,7 @@ from keyboards.box import (
 )
 from keyboards.menu import main_menu_kb
 from decouple import config
-from config import BOXES, DELIVERY_SETTINGS, DB, PROMO_CODES
+from config import BOXES, DELIVERY_SETTINGS, DB, PROMO_CODES, WAREHOUSE_ADDRESS
 from database.repository import create_order, get_or_create_user, get_order_by_id
 from datetime import datetime
 import qrcode
@@ -152,11 +152,31 @@ async def process_need_measurements(callback: types.CallbackQuery, state: FSMCon
     await callback.answer()
 
 
-@router.message(RentBox.delivery_method, F.text.in_(["Привезу сам", "Закажите самовывоз"]))
-async def process_delivery_method(message: types.Message, state: FSMContext):
-    await state.update_data(delivery_method=message.text)
+@router.message(RentBox.delivery_method, F.text == "Привезу сам")
+async def process_self_delivery(message: types.Message, state: FSMContext):
+    await state.update_data(
+        delivery_method=message.text,
+        address=WAREHOUSE_ADDRESS,
+        is_self_delivery=True
+    )
+
     await message.answer(
-        "Укажите адрес (город, улица, дом):",
+        f"Адрес склада для самовывоза:{WAREHOUSE_ADDRESS}\n\n"
+        f"Пожалуйста, отправьте номер телефона для связи:",
+        reply_markup=generate_request_contact_kb()
+    )
+    await state.set_state(RentBox.contact)
+
+
+@router.message(RentBox.delivery_method, F.text == "Заказать самовывоз")
+async def process_pickup_service(message: types.Message, state: FSMContext):
+    await state.update_data(
+        delivery_method=message.text,
+        is_self_delivery=False
+    )
+
+    await message.answer(
+        "Укажите адрес, откуда нужно забрать вещи (город, улица, дом, квартира):",
         reply_markup=ReplyKeyboardRemove()
     )
     await state.set_state(RentBox.address)
@@ -264,6 +284,7 @@ async def process_final_summary(message: types.Message, state: FSMContext):
     need_measurements = data.get("need_measurements", False)
     discount_percent = data.get("discount_percent", 0)
     promocode = data.get("promocode")
+    is_self_delivery = data.get("is_self_delivery", False)
 
 
     if need_measurements:
@@ -274,7 +295,7 @@ async def process_final_summary(message: types.Message, state: FSMContext):
         volume_text = f"{box.get('name', '')} ({box.get('size', '')})"
         base_price = box.get("price_per_month", 0)
 
-        if delivery == "Привезу сам":
+        if is_self_delivery:
             price_after_self_delivery = int(base_price * DELIVERY_SETTINGS["self_delivery_discount"])
             self_delivery_discount = base_price - price_after_self_delivery
         else:
@@ -313,12 +334,17 @@ async def process_final_summary(message: types.Message, state: FSMContext):
 
     order_id = order.id
 
+    if is_self_delivery:
+        address_text = f"Адрес склада: {address}"
+    else:
+        address_text = f"Адрес для вывоза: {address}"
+
     summary = (
         "Заявка на аренду бокса:\n\n"
         f"Бокс: {volume_text}\n"
         f"Стоимость: {price_text}\n"
         f"Способ доставки: {delivery}\n"
-        f"Адрес: {address}\n"
+        f"{address_text}\n"
         f"Телефон: {contact}\n"
         f"Почта: {email}\n"
     )
