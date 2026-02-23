@@ -107,12 +107,14 @@ async def get_all_phones(): # получить телефоны пользова
         return result.all()
 
 # промокод
-async def create_promo(code: str, discount_percent: int):
+async def create_promo(code: str, discount_percent: int, active_from=None, active_to=None):
     async with async_session() as session:
         promo = PromoCode(
             code=code,
             discount_percent=discount_percent,
-            is_active=True
+            is_active=True,
+            active_from=active_from,
+            active_to=active_to
         )
         session.add(promo)
         await session.commit()
