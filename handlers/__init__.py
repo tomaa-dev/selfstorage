@@ -12,6 +12,6 @@ def register_routes(dp: Dispatcher):
     dp.include_router(info_router)
     dp.include_router(box_router)
     dp.include_router(admin_router)
-    dp.include_router(rules_router)
     dp.include_router(orders_router)
+    dp.include_router(rules_router)
     

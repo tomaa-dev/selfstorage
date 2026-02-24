@@ -8,7 +8,9 @@ from database.repository import create_promo
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import datetime
 
+
 router = Router()
+
 
 def is_admin(user_id: int) -> bool:
     return user_id in MANAGER_TG_ID
@@ -23,8 +25,6 @@ async def admin_panel_button(message: types.Message):
         "🔐 Админ-панель:",
         reply_markup=admin_main_kb()
     )
-
-
 
 
 @router.callback_query(F.data == "admin_orders")
@@ -79,12 +79,14 @@ async def add_promo_start(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AddPromo.code)
     await callback.answer()
 
+
 @router.message(AddPromo.code)
 async def add_promo_code(message: types.Message, state: FSMContext):
     await state.update_data(code=message.text)
 
     await message.answer("Введите процент скидки (например 20):")
     await state.set_state(AddPromo.discount)
+
 
 @router.message(AddPromo.discount)
 async def add_promo_discount(message: types.Message, state: FSMContext):
@@ -93,6 +95,7 @@ async def add_promo_discount(message: types.Message, state: FSMContext):
 
     await message.answer("Введите дату начала (гггг-мм-дд) или напишите 'нет':")
     await state.set_state(AddPromo.active_from)
+
 
 @router.message(AddPromo.active_from)
 async def add_promo_active_from(message: types.Message, state: FSMContext):
@@ -135,6 +138,7 @@ async def add_promo_finish(message: types.Message, state: FSMContext):
     await message.answer(f"Промокод {data.get('code')} добавлен со скидкой {data.get('discount')}%")
 
     await state.clear()
+
 
 @router.callback_query(F.data == "promo_stats")
 async def promo_stats(callback: types.CallbackQuery):
@@ -179,6 +183,7 @@ async def promo_stats(callback: types.CallbackQuery):
     await callback.message.answer(text)
     await callback.answer()
 
+
 @router.callback_query(F.data.startswith("toggle_promo_"))
 async def toggle_promo(callback: types.CallbackQuery):
 
@@ -202,5 +207,3 @@ async def toggle_promo(callback: types.CallbackQuery):
             break
 
     await callback.answer()
-
-

@@ -6,6 +6,7 @@ def main_menu_kb(user_id: int):
     keyboard=[
         [
             KeyboardButton(text="О нас"),
+            KeyboardButton(text="Список вещей"),
             KeyboardButton(text="Мои заказы")
         ],
         [

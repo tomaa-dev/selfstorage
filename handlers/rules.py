@@ -1,9 +1,10 @@
 from aiogram import F, Router, types
-from keyboards.rules import generate_rules, generate_prohibited_kb, generate_allowed_kb
+from keyboards.rules import generate_rules, generate_prohibited_kb
 from decouple import config
 from config import PROHIBITED_KEYWORDS, ALLOWED_KEYWORDS, BOXES, MANAGER_PHONE
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, ReplyKeyboardRemove
 from handlers.box import RentBox
+from keyboards.menu import main_menu_kb
 
 
 router = Router()
@@ -75,7 +76,7 @@ async def check_item(message: types.Message):
         }
         reason = reasons.get(prohibited_found[0], "запрещено по правилам безопасности")
         await message.answer(
-            f"Этот предмет запрещён к хранению по причине: {reason}. Предлагаем варианты: утилизация или связаться с оператором.",
+            f"Этот предмет запрещён к хранению по причине: {reason}. Предлагаем вариант - связаться с оператором.",
             reply_markup=generate_prohibited_kb()
         )
         return
@@ -83,33 +84,15 @@ async def check_item(message: types.Message):
     allowed_found = [kw for kw in ALLOWED_KEYWORDS if kw.lower() in text]
     if allowed_found:
         await message.answer(
-            "Этот предмет разрешён к хранению. Хотите подобрать бокс?",
-            reply_markup=generate_allowed_kb()
+            "Этот предмет разрешён к хранению.",
+            reply_markup=main_menu_kb(message.from_user.id),
         )
         return
     
     await message.answer(
         "Не уверен, разрешён ли этот предмет. Свяжитесь с оператором для уточнения.",
-        reply_markup=generate_rules()
+        reply_markup=generate_prohibited_kb()
     )
-
-
-@router.callback_query(F.data == "pick_box")
-async def pick_box(callback: CallbackQuery):
-    text = "Доступные боксы для аренды:\n\n"
-    
-    for box in BOXES:
-        text += (
-            f"{box['name']}\n"
-            f"Размер: {box['size']} ({box['dimensions']})\n"
-            f"Цена: {box['price_per_month']} руб/мес\n"
-            f"Описание: {box['description']}\n\n"
-        )
-    
-    text += "Чтобы забронировать, нажмите 'Связаться с оператором'."
-    
-    await callback.message.answer(text)
-    await callback.answer()
 
 
 @router.callback_query(F.data == "contact_operator")

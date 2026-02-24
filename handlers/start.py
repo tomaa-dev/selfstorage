@@ -13,14 +13,13 @@ router = Router()
 async def start_bot(message: types.Message):
     user, is_new = await get_or_create_user(message.from_user.id)
 
-    if is_new:
-        pdf = FSInputFile(PD_PDF_PATH)
+    pdf = FSInputFile(PD_PDF_PATH)
 
-        await message.answer_document(
-            document=pdf,
-            caption=(
-                "Перед началом работы с ботом ознакомьтесь, пожалуйста,\nс согласием на обработку персональных данных."
-            )
+    await message.answer_document(
+        document=pdf,
+        caption=(
+            "Перед началом работы с ботом ознакомьтесь, пожалуйста,\nс согласием на обработку персональных данных."
+        )
     )
 
     await message.answer(

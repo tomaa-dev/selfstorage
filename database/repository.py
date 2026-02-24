@@ -76,6 +76,7 @@ async def get_user_orders(user_id: int): # получить заказы пол�
         )
         return result.scalars().all()
 
+
 async def get_valid_promo(code: str): # проверка промокода
     today = datetime.date.today()
 
@@ -145,11 +146,21 @@ async def count_orders_by_promo(code: str) -> int:
         )
         return result.scalar_one()
 
+
 async def increase_promo_usage(code: str):
     async with async_session() as session:
         await session.execute(
             update(PromoCode)
             .where(PromoCode.code == code)
             .values(usage_count=PromoCode.usage_count + 1)
+        )
+        await session.commit()
+
+
+async def update_order(order_id: int, **kwargs):
+    from sqlalchemy import update
+    async with async_session() as session:
+        await session.execute(
+            update(Order).where(Order.id == order_id).values(**kwargs)
         )
         await session.commit()

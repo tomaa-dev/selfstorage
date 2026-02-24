@@ -40,12 +40,25 @@ def generate_boxes_kb():
 
     buttons.append([
         InlineKeyboardButton(
-            text="Нужны замеры (сделаем при вывозе)",
+            text="Нужны замеры",
             callback_data="need_measurements"
         )
     ])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    return keyboard
+
+
+def generate_rental_period_kb():
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="1 месяц", callback_data="period_1"),
+                InlineKeyboardButton(text="3 месяца", callback_data="period_3"),
+                InlineKeyboardButton(text="6 месяцев", callback_data="period_6")
+            ]
+        ]
+    )
     return keyboard
 
 
@@ -107,12 +120,6 @@ def generate_payment_kb(order_id: int, payment_url: str):
                 InlineKeyboardButton(
                     text="Проверить оплату",
                     callback_data=f"check_payment_{order_id}"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="В главное меню",
-                    callback_data="back_to_main"
                 )
             ]
         ]
