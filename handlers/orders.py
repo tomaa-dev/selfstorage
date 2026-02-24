@@ -1,7 +1,9 @@
 from database.repository import get_or_create_user, get_user_orders
 from aiogram import Router, F, types
 
+
 router = Router()
+
 
 @router.message(F.text == "Мои заказы")
 async def my_orders(message: types.Message):
@@ -19,7 +21,7 @@ async def my_orders(message: types.Message):
     for order in orders:
 
         text += (
-            f"🔹 Заказ №{order.id}\n"
+            f"Заказ №{order.id}\n"
             f"ФИО: {order.fio}\n"
             f"Размер: {order.volume}\n"
             f"Заказ №{order.id}\n"

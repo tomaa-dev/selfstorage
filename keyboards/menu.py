@@ -1,11 +1,11 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from config import MANAGER_TG_ID
 
+
 def main_menu_kb(user_id: int):
     keyboard=[
         [
             KeyboardButton(text="О нас"),
-            KeyboardButton(text="Профиль"),
             KeyboardButton(text="Мои заказы")
         ],
         [

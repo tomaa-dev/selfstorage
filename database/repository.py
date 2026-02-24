@@ -35,12 +35,14 @@ async def create_order(  # создание заказа
     start_date: str | None = None,
     end_date: str | None = None,
     promo_code: str | None = None,
+    email: str | None = None
 ):
     async with async_session() as session:
 
         order = Order(
             user_id=user_id,
             fio=fio,
+            email=email,
             volume=volume,
             delivery_type=delivery_type,
             phone=phone,

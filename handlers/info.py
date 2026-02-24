@@ -33,4 +33,4 @@ async def info(message: types.Message):
             "2. Быстрый MVP‑канал продаж для проверки спроса и сбора аудитории.\n\n"
         )
 
-        await message.answer(text, reply_markup=main_menu_kb())
+        await message.answer(text, reply_markup=main_menu_kb(message.from_user.id))

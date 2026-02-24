@@ -9,6 +9,16 @@ from handlers.box import RentBox
 router = Router()
 
 
+ADMIN_COMMANDS = [
+    "Админ-панель", 
+    "О нас", 
+    "Профиль", 
+    "Мои заказы", 
+    "Правила хранения", 
+    "Арендовать бокс"
+]
+
+
 @router.message(F.text == "Правила хранения")
 async def rule(message: types.Message):
     text = (
@@ -32,7 +42,8 @@ async def rule(message: types.Message):
     await message.answer(text, reply_markup=generate_rules())
 
 
-@router.message(RentBox.volume)
+@router.message(~F.text.in_(ADMIN_COMMANDS))
+@router.message()
 async def check_item(message: types.Message):
     text = message.text.lower()
     prohibited_found = [kw for kw in PROHIBITED_KEYWORDS if kw.lower() in text]
@@ -103,7 +114,7 @@ async def pick_box(callback: CallbackQuery):
 
 @router.callback_query(F.data == "contact_operator")
 async def contact_operator(callback: CallbackQuery):
-    tg_link = f"tg://user?id={config(ADMIN_CHAT_ID)}"
+    tg_link = f"tg://user?id={config('ADMIN_CHAT_ID')}"
     
     text = (
         "Связь с оператором\n\n"

@@ -1,4 +1,3 @@
-import uuid
 import os
 import tempfile
 from urllib.parse import urlencode
@@ -46,19 +45,7 @@ class RentBox(StatesGroup):
     check_payment = State()
 
 
-@router.message(F.text == "Арендовать бокс")
-@router.callback_query(F.data == "pick_box")
-async def start_rent_box(event: types.Message | types.CallbackQuery, state: FSMContext):
-    await state.clear()
-
-    if isinstance(event, types.CallbackQuery):
-        message = event.message
-        await event.answer()
-    else:
-        message = event
-
-
-def generate_payment_url(order_id: int, amount: int, description: str) -> str:
+def generate_payment_url(order_id: int, amount: int, description: str):
     base_url = "https://paymaster.ru/payment/init"
 
     params = {
@@ -71,10 +58,6 @@ def generate_payment_url(order_id: int, amount: int, description: str) -> str:
     }
 
     return f"{base_url}?{urlencode(params)}"
-
-
-def urlencode(params: dict):
-    return "&".join([f"{k}={v}" for k, v in params.items()])
 
 
 def generate_qr_code_file(payment_url: str):
@@ -167,10 +150,6 @@ async def process_fio(message: types.Message, state: FSMContext):
     await state.update_data(fio=message.text)
 
     await message.answer(
-        "📱 Пожалуйста, оставьте ваш контактный номер телефона для связи:\n"
-        "(Например: +7 918 123-45-67)"
-    )
-
         "Замеры будут произведены при вывозе ваших вещей\n\n"
         "Специалист приедет к вам, оценит объём и поможет подобрать оптимальный размер бокса.",
         reply_markup=generate_delivery_method_for_measurements_kb()
@@ -178,7 +157,7 @@ async def process_fio(message: types.Message, state: FSMContext):
 
     await state.update_data(selected_box=None, need_measurements=True)
     await state.set_state(RentBox.delivery_method)
-    await callback.answer()
+    # await callback.answer()
 
 
 @router.message(RentBox.delivery_method, F.text == "Привезу сам")
@@ -222,65 +201,8 @@ async def process_address(message: types.Message, state: FSMContext):
     await state.set_state(RentBox.contact)
 
 
-
 @router.message(RentBox.contact)
 async def process_contact(message: types.Message, state: FSMContext):
-    await state.update_data(contact=message.text)
-
-    await message.answer("Введите промокод (если есть) или напишите 'нет':")
-
-    await state.set_state(RentBox.promo)
-
-@router.message(RentBox.promo)
-async def process_promo(message: types.Message, state: FSMContext):
-    promo_code = message.text.strip()
-
-    data = await state.get_data()
-    fio = data.get("fio")
-    box = data.get("selected_box", {})
-    delivery = data.get("delivery_method", "Привезу сам")
-    address = data.get("address", "Не указан")
-    volume = data.get("volume", "Не указан")
-    contact = data.get("contact")
-
-    price = box.get("price_per_month", 0)
-
-    if delivery == "Привезу сам":
-        price = int(price * DELIVERY_SETTINGS["self_delivery_discount"])
-
-    applied_code = None
-
-    if promo_code.lower() != "нет":
-        promo = await get_valid_promo(promo_code)
-
-        if promo:
-            price = int(price * (1 - promo.discount_percent / 100))
-            await increase_promo_usage(promo_code)
-            applied_code = promo_code
-            await message.answer("Промокод применён!")
-        else:
-            await message.answer("Промокод недействителен.")
-
-    summary = (
-        "Заявка на аренду бокса:\n\n"
-        f"Бокс: {box.get('name', 'Не выбран')} ({box.get('size', '')})\n"
-        f"Стоимость: {price} ₽/мес\n"
-        f"Способ доставки: {delivery}\n"
-        f"Адрес: {address}\n"
-        f"Размер: {volume}\n"
-        f"Телефон: {contact}\n"
-        f"Промокод: {applied_code if applied_code else 'нет'}\n\n"
-        "Ваша заявка отправлена! Наш менеджер свяжется с вами в ближайшее время."
-    )
-
-    await message.answer(summary)
-    # Получаем пользователяз
-    user, created = await get_or_create_user(message.from_user.id)
-    # Создаём заказ в БД
-    await create_order(
-        user_id=user.id,
-        fio=fio,
-        volume=volume,
     if message.contact:
         contact = message.contact.phone_number
     else:
@@ -300,10 +222,10 @@ async def process_email(message: types.Message, state: FSMContext):
     await state.update_data(email=message.text)
 
     await message.answer(
-        "Есть промокод? Введите его для получения скидки:",
+        "Есть промокод? Введите его для получения скидки или напишите 'нет':",
         reply_markup=get_promocode_kb()
     )
-    await state.set_state(RentBox.promocode)
+    await state.set_state(RentBox.promo)
 
 
 @router.callback_query(F.data == "skip_promocode")
@@ -313,65 +235,51 @@ async def process_skip_promocode(callback: types.CallbackQuery, state: FSMContex
     await process_final_summary(callback.message, state)
 
 
-@router.message(RentBox.promocode)
-async def process_promocode(message: types.Message, state: FSMContext):
-    users_promocode = message.text.strip().lower()
+@router.message(RentBox.promo)
+async def process_promo(message: types.Message, state: FSMContext):
+    promo_code = message.text.strip()
 
-    promo_found = None
-    for promo in PROMO_CODES:
-        if promo["code"].lower() == users_promocode and promo.get("is_active", True):
-            promo_found = promo
-            break
-    
-    if promo_found:
-        today = datetime.now().strftime("%Y-%m-%d")
-        active_from = promo_found.get("active_from", "")
-        active_to = promo_found.get("active_to", "")
-        
-        is_valid = True
-        if active_from and today < active_from:
-            is_valid = False
-        if active_to and today > active_to:
-            is_valid = False
+    if promo_code.lower() == "нет":
+        await state.update_data(promo_code=None, discount_percent=0)
+        await process_final_summary(message, state)
+        return
 
-        if is_valid:
-            discount_percent = promo_found["discount_percent"]
-            await message.answer(
-                f"Поздравляем! Вы получили скидку {discount_percent}%",
-                reply_markup=ReplyKeyboardRemove()
-            )
-            await state.update_data(
-                promocode=users_promocode, 
-                discount_percent=discount_percent
-            )
-        else:
-            await message.answer(
-                "К сожалению, срок действия этого промокода истёк.",
-                reply_markup=get_promocode_kb()
-            )
-            return
+    promo = await get_valid_promo(promo_code)
+
+    if promo:
+        discount_percent = promo.discount_percent
+        await increase_promo_usage(promo_code)
+        await message.answer(
+            f"Поздравляем! Вы получили скидку {discount_percent}%",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        await state.update_data(
+            promo_code=promo_code, 
+            discount_percent=discount_percent
+        )
     else:
         await message.answer(
-            "К сожалению, такого промокода не существует.\n"
+            "К сожалению, такого промокода не существует или он истёк.\n"
             "Попробуйте ещё раз или нажмите «Пропустить»:",
             reply_markup=get_promocode_kb()
         )
         return
+
     await process_final_summary(message, state)
 
 
 async def process_final_summary(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    box = data.get("selected_box") or {}
+    box = data.get("selected_box", {})
     delivery = data.get("delivery_method", "Привезу сам")
     address = data.get("address", "Не указан")
-    contact = data.get("contact", "Не указан")
+    contact = data.get("contact")
     email = data.get("email")
+    fio = data.get("fio")
     need_measurements = data.get("need_measurements", False)
     discount_percent = data.get("discount_percent", 0)
-    promocode = data.get("promocode")
+    promo_code = data.get("promo_code")
     is_self_delivery = data.get("is_self_delivery", False)
-
 
     if need_measurements:
         volume_text = "Требуются замеры"
@@ -407,16 +315,20 @@ async def process_final_summary(message: types.Message, state: FSMContext):
             else:
                 price_text = f"{price} ₽/мес"
 
-    user = await get_or_create_user(message.from_user.id)
+    # Получаем пользователяз
+    user, created = await get_or_create_user(message.from_user.id)
 
+    # Создаём заказ в БД
     order = await create_order(
         user_id=user.id,
+        fio=fio,
         volume=volume_text,
         delivery_type=delivery,
         phone=contact,
         estimated_price=price,
         address=address,
-        promo_code=applied_code
+        promo_code=promo_code,
+        email=email
     )
 
     order_id = order.id
@@ -436,8 +348,8 @@ async def process_final_summary(message: types.Message, state: FSMContext):
         f"Почта: {email}\n"
     )
 
-    if discount_percent > 0 and promocode:
-        summary += f"Промокод: {promocode} (-{discount_percent}%)\n"
+    if discount_percent > 0 and promo_code:
+        summary += f"Промокод: {promo_code} (-{discount_percent}%)\n"
 
     summary += f"\nНомер заказа: #{order_id}"
 
@@ -460,7 +372,7 @@ async def process_final_summary(message: types.Message, state: FSMContext):
                 ]
             ]
         )
-        
+
         await message.answer(summary, reply_markup=payment_kb)
     else:
         summary += "\n\nВаша заявка отправлена! Наш менеджер свяжется с вами в ближайшее время."
@@ -549,7 +461,7 @@ async def process_back_to_main(callback: types.CallbackQuery, state: FSMContext)
     await callback.message.answer(
         "Главное меню\n\n"
         "Выберите действие:",
-        reply_markup=main_menu_kb()
+        reply_markup=main_menu_kb(callback.from_user.id)
     )
     await callback.answer()
 
