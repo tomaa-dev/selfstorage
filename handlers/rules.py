@@ -1,8 +1,10 @@
 from aiogram import F, Router, types
 from keyboards.rules import generate_rules, generate_prohibited_kb, generate_allowed_kb
-from config import PROHIBITED_KEYWORDS, ALLOWED_KEYWORDS, BOXES, MANAGER_PHONE, MANAGER_TG_ID
+from decouple import config
+from config import PROHIBITED_KEYWORDS, ALLOWED_KEYWORDS, BOXES, MANAGER_PHONE
 from aiogram.types import CallbackQuery
 from handlers.box import RentBox
+
 
 router = Router()
 
@@ -87,10 +89,10 @@ async def pick_box(callback: CallbackQuery):
     
     for box in BOXES:
         text += (
-            f"📦 {box['name']}\n"
-            f"   Размер: {box['size']} ({box['dimensions']})\n"
-            f"   Цена: {box['price_per_month']} руб/мес\n"
-            f"   Описание: {box['description']}\n\n"
+            f"{box['name']}\n"
+            f"Размер: {box['size']} ({box['dimensions']})\n"
+            f"Цена: {box['price_per_month']} руб/мес\n"
+            f"Описание: {box['description']}\n\n"
         )
     
     text += "Чтобы забронировать, нажмите 'Связаться с оператором'."
@@ -101,10 +103,10 @@ async def pick_box(callback: CallbackQuery):
 
 @router.callback_query(F.data == "contact_operator")
 async def contact_operator(callback: CallbackQuery):
-    tg_link = f"tg://user?id={MANAGER_TG_ID}"
+    tg_link = f"tg://user?id={config(ADMIN_CHAT_ID)}"
     
     text = (
-        "📞 <b>Связь с оператором</b>\n\n"
+        "Связь с оператором\n\n"
         f"Телефон: <a href=\"tel:{MANAGER_PHONE}\">{MANAGER_PHONE}</a>\n"
         f"Telegram: <a href=\"{tg_link}\">Написать менеджеру</a>\n\n"
         "Наш менеджер поможет подобрать бокс, ответить на вопросы по условиям хранения или оформить заказ."

@@ -21,3 +21,14 @@ BOXES = DB["tariffs"]["boxes"]
 DELIVERY_SETTINGS = DB["tariffs"]["delivery"]
 MANAGER_PHONE = DB["meta"]["manager_phone"]
 MANAGER_TG_ID = DB["meta"]["manager_telegram_id"]
+WAREHOUSE_ADDRESS = DB["meta"]["warehouse_address"]
+PROMO_CODES = DB.get("promo_codes", [])
+
+
+ORDER_STATUSES = {
+    "CREATED": "Создан",
+    "CONFIRMED": "Подтверждён",
+    "IN_STORAGE": "На хранении",
+    "COMPLETED": "Завершён",
+    "CANCELLED": "Отменён"
+}
