@@ -39,6 +39,10 @@ class Order(Base):  # заказы
     start_date: Mapped[datetime.date] = mapped_column(Date, nullable=True)  # дата начала хранения
     end_date: Mapped[datetime.date] = mapped_column(Date, nullable=True)  # дата окончания хранения
 
+    status: Mapped[str] = mapped_column(String(20), default="CREATED")
+    is_delivery_required: Mapped[bool] = mapped_column(default=False)
+    is_delivered: Mapped[bool] = mapped_column(default=False)
+
 
 class PromoCode(Base):  # промокоды
     __tablename__ = "promo_codes"
