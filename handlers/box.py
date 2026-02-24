@@ -21,10 +21,10 @@ from keyboards.box import (
     generate_payment_kb,
     generate_payment_success_kb
 )
+from database.repository import create_order, get_or_create_user, get_valid_promo, increase_promo_usage, get_order_by_id
 from keyboards.menu import main_menu_kb
 from decouple import config
 from config import BOXES, DELIVERY_SETTINGS, DB, PROMO_CODES, WAREHOUSE_ADDRESS
-from database.repository import create_order, get_or_create_user, get_order_by_id
 from datetime import datetime
 import qrcode
 from io import BytesIO
@@ -37,26 +37,39 @@ class RentBox(StatesGroup):
     delivery_method = State()
     address = State()
     volume = State()
-    contact = State()
+    contact = State() 
     email = State()
-    promocode = State()
+    promo = State()
     selected_box = State()
+    fio = State()
     payment = State()
     check_payment = State()
+
+
+@router.message(F.text == "Арендовать бокс")
+@router.callback_query(F.data == "pick_box")
+async def start_rent_box(event: types.Message | types.CallbackQuery, state: FSMContext):
+    await state.clear()
+
+    if isinstance(event, types.CallbackQuery):
+        message = event.message
+        await event.answer()
+    else:
+        message = event
 
 
 def generate_payment_url(order_id: int, amount: int, description: str) -> str:
     base_url = "https://paymaster.ru/payment/init"
 
     params = {
-        "merchantId": "1744374395:TEST:ab1f8671217a68475132",
+        "merchantId": config('PAYMENT_TOKEN'),
         "amount": str(amount),
         "currency": "RUB",
         "orderId": str(order_id),
         "description": description[:100],
         "testMode": "1",
     }
-    
+
     return f"{base_url}?{urlencode(params)}"
 
 
@@ -142,6 +155,22 @@ async def process_select_box(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "need_measurements")
 async def process_need_measurements(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.answer(
+        "Введите ваше ФИО:"
+    )
+
+    await state.set_state(RentBox.fio)
+    await callback.answer()
+
+
+@router.message(RentBox.fio)
+async def process_fio(message: types.Message, state: FSMContext):
+    await state.update_data(fio=message.text)
+
+    await message.answer(
+        "📱 Пожалуйста, оставьте ваш контактный номер телефона для связи:\n"
+        "(Например: +7 918 123-45-67)"
+    )
+
         "Замеры будут произведены при вывозе ваших вещей\n\n"
         "Специалист приедет к вам, оценит объём и поможет подобрать оптимальный размер бокса.",
         reply_markup=generate_delivery_method_for_measurements_kb()
@@ -193,8 +222,65 @@ async def process_address(message: types.Message, state: FSMContext):
     await state.set_state(RentBox.contact)
 
 
+
 @router.message(RentBox.contact)
 async def process_contact(message: types.Message, state: FSMContext):
+    await state.update_data(contact=message.text)
+
+    await message.answer("Введите промокод (если есть) или напишите 'нет':")
+
+    await state.set_state(RentBox.promo)
+
+@router.message(RentBox.promo)
+async def process_promo(message: types.Message, state: FSMContext):
+    promo_code = message.text.strip()
+
+    data = await state.get_data()
+    fio = data.get("fio")
+    box = data.get("selected_box", {})
+    delivery = data.get("delivery_method", "Привезу сам")
+    address = data.get("address", "Не указан")
+    volume = data.get("volume", "Не указан")
+    contact = data.get("contact")
+
+    price = box.get("price_per_month", 0)
+
+    if delivery == "Привезу сам":
+        price = int(price * DELIVERY_SETTINGS["self_delivery_discount"])
+
+    applied_code = None
+
+    if promo_code.lower() != "нет":
+        promo = await get_valid_promo(promo_code)
+
+        if promo:
+            price = int(price * (1 - promo.discount_percent / 100))
+            await increase_promo_usage(promo_code)
+            applied_code = promo_code
+            await message.answer("Промокод применён!")
+        else:
+            await message.answer("Промокод недействителен.")
+
+    summary = (
+        "Заявка на аренду бокса:\n\n"
+        f"Бокс: {box.get('name', 'Не выбран')} ({box.get('size', '')})\n"
+        f"Стоимость: {price} ₽/мес\n"
+        f"Способ доставки: {delivery}\n"
+        f"Адрес: {address}\n"
+        f"Размер: {volume}\n"
+        f"Телефон: {contact}\n"
+        f"Промокод: {applied_code if applied_code else 'нет'}\n\n"
+        "Ваша заявка отправлена! Наш менеджер свяжется с вами в ближайшее время."
+    )
+
+    await message.answer(summary)
+    # Получаем пользователяз
+    user, created = await get_or_create_user(message.from_user.id)
+    # Создаём заказ в БД
+    await create_order(
+        user_id=user.id,
+        fio=fio,
+        volume=volume,
     if message.contact:
         contact = message.contact.phone_number
     else:
@@ -329,7 +415,8 @@ async def process_final_summary(message: types.Message, state: FSMContext):
         delivery_type=delivery,
         phone=contact,
         estimated_price=price,
-        address=address
+        address=address,
+        promo_code=applied_code
     )
 
     order_id = order.id
@@ -412,7 +499,6 @@ async def process_pay_order(callback: types.CallbackQuery, state: FSMContext):
     )
 
     qr_file_path = generate_qr_code_file(payment_url)
-
     qr_image = FSInputFile(qr_file_path)
 
     await callback.message.answer_photo(
