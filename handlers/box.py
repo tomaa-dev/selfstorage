@@ -1,5 +1,8 @@
 import os
 import tempfile
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from urllib.parse import urlencode
 from aiogram import F, Router, types
 from aiogram.fsm.context import FSMContext
@@ -12,7 +15,6 @@ from aiogram.types import (
 )
 from keyboards.box import (
     generate_delivery_method_kb,
-    generate_delivery_method_for_measurements_kb,
     generate_boxes_kb,
     generate_rental_period_kb,
     generate_confirm_kb,
@@ -21,7 +23,17 @@ from keyboards.box import (
     generate_payment_kb,
     generate_payment_success_kb
 )
-from database.repository import create_order, get_or_create_user, get_valid_promo, increase_promo_usage, get_order_by_id
+from database.repository import (
+    create_order, 
+    get_or_create_user, 
+    get_valid_promo, 
+    increase_promo_usage, 
+    get_order_by_id,
+    update_order,
+    send_real_email,
+    notify_order_expiring_soon,
+    notify_order_expired
+)
 from keyboards.menu import main_menu_kb
 from decouple import config
 from config import BOXES, DELIVERY_SETTINGS, DB, PROMO_CODES, WAREHOUSE_ADDRESS
@@ -35,13 +47,13 @@ router = Router()
 class RentBox(StatesGroup):
     selected_box = State()
     rental_period = State()
+    fio = State()
     delivery_method = State()
     address = State()
     contact = State() 
     email = State()
     promo = State()
     confirm_order = State()
-    fio = State()
     payment = State()
     check_payment = State()
 
@@ -155,29 +167,14 @@ async def process_rental_period(callback: types.CallbackQuery, state: FSMContext
     base_price = box.get("price_per_month", 0)
     total_price = base_price * months
 
-    is_self_delivery = data.get("is_self_delivery", False)
-    if is_self_delivery:
-        total_price = int(total_price * DELIVERY_SETTINGS["self_delivery_discount"])
-    
     await state.update_data(total_price=total_price)
-    
+
     await callback.message.answer(
         f"Срок аренды: {period_text}\n"
         f"Итоговая стоимость: {total_price} ₽\n\n"
-        "Выберите способ доставки вещей:",
-        reply_markup=generate_delivery_method_kb()
-    )
-    
-    await state.set_state(RentBox.delivery_method)
-    await callback.answer()
-
-
-@router.callback_query(F.data == "need_measurements")
-async def process_need_measurements(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.answer(
         "Введите ваше ФИО:"
     )
-
+    
     await state.set_state(RentBox.fio)
     await callback.answer()
 
@@ -185,42 +182,47 @@ async def process_need_measurements(callback: types.CallbackQuery, state: FSMCon
 @router.message(RentBox.fio)
 async def process_fio(message: types.Message, state: FSMContext):
     await state.update_data(fio=message.text)
-
+    
     await message.answer(
-        "Замеры будут произведены при вывозе ваших вещей\n\n"
-        "Специалист приедет к вам, оценит объём и поможет подобрать оптимальный размер бокса.",
-        reply_markup=generate_delivery_method_for_measurements_kb()
+        "Выберите способ доставки вещей:\n\n"
+        "ВНИМАНИЕ:\n"
+        "При приёме вещей на склад наши специалисты произведут замеры габаритов.\n"
+        "Если объём превысит выбранный бокс, мы предложим более подходящий вариант.",
+        reply_markup=generate_delivery_method_kb()
     )
-
-    await state.update_data(selected_box=None, need_measurements=True)
+    
     await state.set_state(RentBox.delivery_method)
 
 
-@router.message(RentBox.delivery_method, F.text == "Привезу сам")
+@router.message(RentBox.delivery_method, F.text == "Самовывоз")
 async def process_self_delivery(message: types.Message, state: FSMContext):
     await state.update_data(
-        delivery_method=message.text,
+        delivery_method="Самовывоз",
         address=WAREHOUSE_ADDRESS,
-        is_self_delivery=True
+        is_self_delivery=True,
+        is_delivery_required=False
     )
 
     await message.answer(
         f"Адрес склада для самовывоза: {WAREHOUSE_ADDRESS}\n\n"
-        f"Пожалуйста, отправьте номер телефона для связи:",
+        "При приёме вещей на склад наши специалисты произведут замеры габаритов ваших вещей.\n\n"
+        "Отправьте номер телефона для связи:",
         reply_markup=generate_request_contact_kb()
     )
     await state.set_state(RentBox.contact)
 
 
-@router.message(RentBox.delivery_method, F.text == "Заказать самовывоз")
+@router.message(RentBox.delivery_method, F.text == "Вывоз вещей - доставка")
 async def process_pickup_service(message: types.Message, state: FSMContext):
     await state.update_data(
-        delivery_method=message.text,
-        is_self_delivery=False
+        delivery_method="Заказать вывоз",
+        is_self_delivery=False,
+        is_delivery_required=True
     )
 
     await message.answer(
-        "Укажите адрес, откуда нужно забрать вещи (город, улица, дом, квартира):",
+        "При заборе вещей наш курьер произведёт замеры габаритов!\n\n"
+        "Укажите адрес, откуда нужно забрать вещи\n(город, улица, дом, квартира):",
         reply_markup=ReplyKeyboardRemove()
     )
     await state.set_state(RentBox.address)
@@ -307,7 +309,7 @@ async def process_promo(message: types.Message, state: FSMContext):
 async def process_final_summary(message: types.Message, state: FSMContext):
     data = await state.get_data()
     box = data.get("selected_box", {})
-    delivery = data.get("delivery_method", "Привезу сам")
+    delivery = data.get("delivery_method", "Самовывоз")
     address = data.get("address", "Не указан")
     contact = data.get("contact")
     email = data.get("email")
@@ -316,53 +318,38 @@ async def process_final_summary(message: types.Message, state: FSMContext):
     discount_percent = data.get("discount_percent", 0)
     promo_code = data.get("promo_code")
     is_self_delivery = data.get("is_self_delivery", False)
+    is_delivery_required = data.get("is_delivery_required", False)
     rental_months = data.get("rental_months", 1)
     rental_period_text = data.get("rental_period_text", "1 месяц")
 
     start_date = datetime.now().date()
     end_date = start_date + timedelta(days=30 * rental_months)
 
-    if need_measurements:
-        volume_text = "Требуются замеры"
-        price = 0
-        price_text = "Будет определена после замеров"
+    volume_text = f"{box.get('name', '')} ({box.get('size', '')})"
+    base_price = box.get("price_per_month", 0)
+    total_base = base_price * rental_months
+
+    if is_self_delivery:
+        price_after_self_delivery = int(total_base * DELIVERY_SETTINGS["self_delivery_discount"])
+        self_delivery_discount = total_base - price_after_self_delivery
     else:
-        volume_text = f"{box.get('name', '')} ({box.get('size', '')})"
-        base_price = box.get("price_per_month", 0)
-        total_base = base_price * rental_months
-
-        if is_self_delivery:
-            price_after_self_delivery = int(total_base * DELIVERY_SETTINGS["self_delivery_discount"])
-            self_delivery_discount = total_base - price_after_self_delivery
-        else:
-            price_after_self_delivery = total_base
-            self_delivery_discount = 0
-
+        price_after_self_delivery = total_base
+        self_delivery_discount = 0
         
-        if discount_percent > 0:
-            price = int(price_after_self_delivery * (100 - discount_percent) / 100)
-            price_text = (
-                f"{price} ₽\n"
-                f"(базовая: {base_price} ₽/мес × {rental_months} мес = {total_base} ₽\n"
-                f"самовывоз: -{self_delivery_discount} ₽\n"
-                f"промокод: -{discount_percent}%)"
+    if discount_percent > 0:
+        price = int(price_after_self_delivery * (100 - discount_percent) / 100)
+        price_text = (
+            f"{price} ₽\n"
+            f"(базовая: {base_price} ₽/мес × {rental_months} мес = {total_base} ₽\n"
+            f"самовывоз: -{self_delivery_discount} ₽\n"
+             f"промокод: -{discount_percent}%)"
             )
+    else:
+        price = price_after_self_delivery
+        if self_delivery_discount > 0:
+            price_text = f"{price} ₽ (базовая: {total_base} ₽, самовывоз: -{self_delivery_discount} ₽)"
         else:
-            price = price_after_self_delivery
-            if self_delivery_discount > 0:
-                price_text = (
-                    f"{price} ₽\n"
-                    f"(базовая: {base_price} ₽/мес × {rental_months} мес = {total_base} ₽\n"
-                    f"самовывоз: -{self_delivery_discount} ₽)"
-                )
-            else:
-                price_text = f"{price} ₽"
-
-    await state.update_data(
-        start_date=start_date.strftime("%Y-%m-%d"),
-        end_date=end_date.strftime("%Y-%m-%d"),
-        final_price=price
-    )
+            price_text = f"{price} ₽"
 
     user, created = await get_or_create_user(message.from_user.id)
 
@@ -377,15 +364,18 @@ async def process_final_summary(message: types.Message, state: FSMContext):
         promo_code=promo_code,
         email=email,
         start_date=start_date,
-        end_date=end_date
+        end_date=end_date,
+        is_delivery_required=is_delivery_required
     )
 
     order_id = order.id
 
     if is_self_delivery:
-        address_text = f"Адрес склада: {address}"
+        address_text = f"Самовывоз со склада: {WAREHOUSE_ADDRESS}"
+        measurement_note = "Замеры будут произведены при приёме вещей на склад"
     else:
         address_text = f"Адрес для вывоза: {address}"
+        measurement_note = "Замеры будут произведены курьером при вывозе вещей"
 
     summary = (
         "Заявка на аренду бокса:\n\n"
@@ -397,7 +387,8 @@ async def process_final_summary(message: types.Message, state: FSMContext):
         f"Способ доставки: {delivery}\n"
         f"{address_text}\n"
         f"Телефон: {contact}\n"
-        f"Почта: {email}\n"
+        f"Почта: {email}\n\n"
+        f"{measurement_note}\n"
     )
 
     if discount_percent > 0 and promo_code:
@@ -405,30 +396,27 @@ async def process_final_summary(message: types.Message, state: FSMContext):
 
     summary += f"\nНомер заказа: #{order_id}"
 
-    if not need_measurements:
-        summary += "\n\nДля продолжения нажмите «Оплатить»"
 
-        payment_kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="Оплатить",
-                        callback_data=f"pay_order_{order_id}"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="Перейти на главное меню",
-                        callback_data="back_to_main"
-                    )
-                ]
+    summary += "\n\nДля продолжения нажмите «Оплатить»"
+
+    payment_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Оплатить",
+                    callback_data=f"pay_order_{order_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Перейти на главное меню",
+                    callback_data="back_to_main"
+                )
             ]
-        )
+        ]
+    )
 
-        await message.answer(summary, reply_markup=payment_kb)
-    else:
-        summary += "\n\nВаша заявка отправлена! Наш менеджер свяжется с вами в ближайшее время."
-        await message.answer(summary, reply_markup=ReplyKeyboardRemove())
+    await message.answer(summary, reply_markup=payment_kb)
 
     manager_id = config('ADMIN_CHAT_ID')
     if manager_id:
@@ -496,9 +484,10 @@ async def process_check_payment(callback: types.CallbackQuery, state: FSMContext
         await callback.answer()
         return
 
-    from database.repository import update_order
     current_date = datetime.now().date()
-    await update_order(order_id, start_date=current_date)
+    await update_order(order_id, status="PAID", start_date=current_date)
+
+    order = await get_order_by_id(order_id)
 
     success_kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -517,12 +506,35 @@ async def process_check_payment(callback: types.CallbackQuery, state: FSMContext
         ]
     )
 
+    await send_real_email(
+        email=order.email,
+        subject="Оплата заказа принята - SelfStorage",
+        message=f"""Уважаемый {order.fio or 'клиент'}!
+
+Ваш заказ №{order_id} успешно оплачен!
+
+Детали заказа:
+Бокс: {order.volume}
+Период аренды: с {order.start_date} по {order.end_date}
+Сумма: {order.estimated_price} ₽
+Способ доставки: {order.delivery_type}
+
+Статус:
+{'Доставка запланирована' if order.is_delivery_required else 'Ждем вас на складе'}
+
+Если вы заказали доставку, наш менеджер свяжется с вами в ближайшее время для уточнения деталей.
+Спасибо за выбор SelfStorage!
+"""
+    )
+
     await callback.message.answer(
         f"Оплата прошла успешно!\n\n"
         f"Заказ: #{order_id}:\n\n"
         f"Сумма: {order.estimated_price} ₽\n"
-        f"Статус оплаты: ОПЛАЧЕН\n\n"
-        f"Наш менеджер свяжется с вами в ближайшее время для уточнения деталей доставки.\n"
+        f"Дата начала: {current_date.strftime('%d.%m.%Y')}\n"
+        f"Дата окончания: {order.end_date.strftime('%d.%m.%Y')}\n\n"
+        f"Чек отправлен на вашу почту {order.email}\n\n"
+        f"{'Наш менеджер свяжется с вами для уточнения деталей доставки.' if order.is_delivery_required else 'Ждем вас на складе по адресу: ' + WAREHOUSE_ADDRESS}\n\n"
         f"Спасибо за заказ!",
         reply_markup=success_kb
     )

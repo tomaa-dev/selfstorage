@@ -10,18 +10,8 @@ from config import BOXES
 def generate_delivery_method_kb():
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Привезу сам")],
-            [KeyboardButton(text="Заказать самовывоз")]
-        ],
-        resize_keyboard=True
-    )
-    return keyboard
-
-
-def generate_delivery_method_for_measurements_kb():
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Заказать самовывоз")]
+            [KeyboardButton(text="Самовывоз")],
+            [KeyboardButton(text="Вывоз вещей - доставка")]
         ],
         resize_keyboard=True
     )
@@ -37,13 +27,6 @@ def generate_boxes_kb():
                 callback_data=f"select_box_{box['id']}"
             )
         ])
-
-    buttons.append([
-        InlineKeyboardButton(
-            text="Нужны замеры",
-            callback_data="need_measurements"
-        )
-    ])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
