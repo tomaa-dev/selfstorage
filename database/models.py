@@ -20,7 +20,7 @@ class Order(Base):  # заказы
 
     id: Mapped[int] = mapped_column(primary_key=True)  # ID заказа
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))  # связь пользователя с заказом
-    email: Mapped[int] = mapped_column(String(50), nullable=True) # почта
+    email: Mapped[str] = mapped_column(String(50), nullable=True) # почта
     fio: Mapped[str] = mapped_column(String(20), nullable=True) # фамилия имя отчество
     promo_code: Mapped[str] = mapped_column(String(50), nullable=True)
 

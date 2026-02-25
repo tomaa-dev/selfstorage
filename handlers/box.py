@@ -23,6 +23,7 @@ from keyboards.box import (
     generate_payment_kb,
     generate_payment_success_kb
 )
+<<<<<<< Updated upstream
 from database.repository import (
     create_order, 
     get_or_create_user, 
@@ -34,6 +35,12 @@ from database.repository import (
     notify_order_expiring_soon,
     notify_order_expired
 )
+=======
+from database.repository import (create_order, get_or_create_user,
+                                 get_valid_promo, increase_promo_usage,
+                                 mark_order_paid, get_order_by_id
+                                 )
+>>>>>>> Stashed changes
 from keyboards.menu import main_menu_kb
 from decouple import config
 from config import BOXES, DELIVERY_SETTINGS, DB, PROMO_CODES, WAREHOUSE_ADDRESS
@@ -268,9 +275,10 @@ async def process_email(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data == "skip_promocode")
 async def process_skip_promocode(callback: types.CallbackQuery, state: FSMContext):
-    await state.update_data(promocode=None, discount_percent=0)
+    await state.update_data(promo_code=None, discount_percent=0)
+    await process_final_summary(callback.message,state,callback.from_user.id)
+    await state.clear()
     await callback.answer()
-    await process_final_summary(callback.message, state)
 
 
 @router.message(RentBox.promo)
@@ -306,7 +314,8 @@ async def process_promo(message: types.Message, state: FSMContext):
     await process_final_summary(message, state)
 
 
-async def process_final_summary(message: types.Message, state: FSMContext):
+
+async def process_final_summary(message: types.Message, state: FSMContext, telegram_id: int):
     data = await state.get_data()
     box = data.get("selected_box", {})
     delivery = data.get("delivery_method", "Самовывоз")
@@ -351,7 +360,7 @@ async def process_final_summary(message: types.Message, state: FSMContext):
         else:
             price_text = f"{price} ₽"
 
-    user, created = await get_or_create_user(message.from_user.id)
+    user, created = await get_or_create_user(telegram_id)
 
     order = await create_order(
         user_id=user.id,
@@ -418,7 +427,7 @@ async def process_final_summary(message: types.Message, state: FSMContext):
 
     await message.answer(summary, reply_markup=payment_kb)
 
-    manager_id = config('ADMIN_CHAT_ID')
+    manager_id = config('ADMIN_CHAT_ID', default=None)
     if manager_id:
         try:
             await message.bot.send_message(
@@ -427,6 +436,7 @@ async def process_final_summary(message: types.Message, state: FSMContext):
             )
         except Exception:
             pass
+
 
     await state.update_data(current_order_id=order_id)
     await state.set_state(RentBox.payment)
@@ -485,9 +495,13 @@ async def process_check_payment(callback: types.CallbackQuery, state: FSMContext
         return
 
     current_date = datetime.now().date()
+<<<<<<< Updated upstream
     await update_order(order_id, status="PAID", start_date=current_date)
 
     order = await get_order_by_id(order_id)
+=======
+    await mark_order_paid(order_id)
+>>>>>>> Stashed changes
 
     success_kb = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -544,6 +558,7 @@ async def process_check_payment(callback: types.CallbackQuery, state: FSMContext
 
 @router.callback_query(F.data == "back_to_main")
 async def process_back_to_main(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
     await callback.message.answer(
         "Главное меню\n\n"
         "Выберите действие:",
