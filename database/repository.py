@@ -121,6 +121,15 @@ async def get_orders_for_delivery():
         )
         return result.scalars().all()
 
+async def get_orders_for_admin_list():
+    async with async_session() as session:
+        result = await session.execute(
+            select(Order).where(
+                Order.status.in_(["CREATED", "PAID"])
+            ).order_by(Order.id.desc())
+        )
+        return result.scalars().all()
+
 
 async def get_orders_in_storage():
     today = datetime.date.today()
@@ -129,7 +138,7 @@ async def get_orders_in_storage():
             select(Order).where(
                 and_(
                     Order.status == "IN_STORAGE",
-                    Order.end_date >= today
+                    Order.end_date >= func.current_date()
                 )
             ).order_by(Order.end_date.asc())
         )
@@ -185,6 +194,37 @@ async def get_all_phones():
             select(Order.id, Order.phone)
         )
         return result.all()
+
+async def admin_check_expired_orders() -> int:
+    today = datetime.date.today()
+
+    expired_orders = await get_expired_orders()
+
+    processed = 0
+    for order in expired_orders:
+        if not order.end_date:
+            continue
+
+        if order.end_date < today:
+            await mark_order_expired(order.id)
+            await notify_order_expired(order.id)
+            processed += 1
+
+    return processed
+
+async def get_expired_status_orders():
+    async with async_session() as session:
+        result = await session.execute(
+            select(Order).where(Order.status == "EXPIRED")
+        )
+        return result.scalars().all()
+
+async def get_all_storage_orders():
+    async with async_session() as session:
+        result = await session.execute(
+            select(Order).where(Order.status.in_(["IN_STORAGE", "EXPIRED"]))
+        )
+        return result.scalars().all()
 
 # промокод
 async def create_promo(code: str, discount_percent: int, active_from=None, active_to=None):

@@ -10,9 +10,17 @@ from database.repository import (
     get_expired_orders,
     mark_order_delivered,
     mark_order_in_storage,
+<<<<<<< Updated upstream
     update_order,
     get_order_by_id,
     create_promo
+=======
+    admin_check_expired_orders,
+    get_order_by_id,
+    get_expired_status_orders,
+    update_order,
+    get_orders_for_admin_list
+>>>>>>> Stashed changes
 )
 from keyboards.admin import admin_main_kb 
 from aiogram.fsm.state import StatesGroup, State
@@ -57,17 +65,17 @@ async def admin_all_orders(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id):
         return
 
-    orders = await get_all_orders()
+    orders = await get_orders_for_admin_list()
 
     if not orders:
         await callback.message.answer("Заказов нет.")
+        await callback.answer()
         return
 
-    text = "📋 Все заказы:\n\n"
+    await callback.message.answer("📋 Все заказы:\n")  # заголовок один раз
 
     for order in orders:
-
-        text += (
+        text = (
             "\n===============================\n"
             f"Заказ №{order.id}\n"
             f"ФИО: {order.fio}\n"
@@ -82,8 +90,32 @@ async def admin_all_orders(callback: types.CallbackQuery):
             "\n===============================\n"
         )
 
-    await callback.message.answer(text)
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=f"✅ Принять на склад #{order.id}",
+                        callback_data=f"confirm_storage_{order.id}"
+                    )
+                ]
+            ]
+        )
+
+        await callback.message.answer(text, reply_markup=keyboard)
+
+    # кнопка "Назад" отдельным сообщением в конце
+    back_kb = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="Назад", callback_data="back_to_admin")]]
+    )
+    await callback.message.answer(
+        "Назад в меню:",
+        reply_markup=back_kb
+    )
+
     await callback.answer()
+
+
+
 
 
 @router.callback_query(F.data == "admin_delivery")
@@ -222,19 +254,22 @@ async def admin_storage_orders(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id):
         return
 
+    processed = await admin_check_expired_orders()   # ✅ ДОБАВИЛИ
+
     orders = await get_orders_in_storage()
-    expired_orders = await get_expired_orders()
+    expired_orders = await get_expired_status_orders()
 
     text = "Управление складом:\n\n"
-
-    # Активные заказы на складе
-    text += f"На складе: {len(orders)} заказов\n"
-    text += f"Просрочено: {len(expired_orders)} заказов\n\n"
+    if processed:
+        text += f"✅ Обновлено просроченных: {processed}\n\n"
 
     if orders:
         text += "Активные заказы на складе:\n"
         for order in orders[:10]:  # Показываем первые 10
-            days_left = (order.end_date - datetime.date.today()).days
+            if order.end_date:
+                days_left = (order.end_date - datetime.date.today()).days
+            else:
+                days_left = "?"
             text += (
                 f"   №{order.id} - {order.fio or 'Клиент'}: "
                 f"осталось {days_left} дн.\n"
@@ -294,6 +329,7 @@ async def admin_storage_list(callback: types.CallbackQuery):
 
     text = "Заказы на складе:\n\n"
 
+
     for order in orders:
         days_left = (order.end_date - datetime.date.today()).days
         
@@ -312,7 +348,23 @@ async def admin_storage_list(callback: types.CallbackQuery):
         ]
     )
 
+
     await callback.message.answer(text, reply_markup=keyboard)
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("confirm_storage_"))
+async def confirm_storage(callback: types.CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        return
+
+    order_id = int(callback.data.replace("confirm_storage_", ""))
+
+    await mark_order_in_storage(order_id)
+
+    await callback.message.answer(
+        f"✅ Заказ №{order_id} подтверждён как принятый на склад.",
+        reply_markup=admin_main_kb()
+    )
     await callback.answer()
 
 
@@ -321,7 +373,7 @@ async def admin_expired_list(callback: types.CallbackQuery):
     if not is_admin(callback.from_user.id):
         return
 
-    orders = await get_expired_orders()
+    orders = await get_expired_status_orders()
 
     if not orders:
         await callback.message.answer(
@@ -334,7 +386,11 @@ async def admin_expired_list(callback: types.CallbackQuery):
     text = "Просроченные заказы:\n\n"
 
     for order in orders:
-        days_expired = (datetime.date.today() - order.end_date).days
+        if order.end_date:
+            days_expired = (datetime.date.today() - order.end_date).days
+            end_text = f"{order.end_date} ({days_expired} дн. назад)"
+        else:
+            end_text = "не указано"
         
         text += (
             f"Заказ №{order.id}\n"
