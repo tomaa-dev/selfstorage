@@ -1,8 +1,12 @@
 import datetime
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from sqlalchemy import select, update, and_
 from database.session import async_session
 from database.models import User, Order, PromoCode
 from sqlalchemy import func
+from decouple import config
 
 
 async def get_or_create_user(telegram_id: int): # поверка есть ли пользователь или нет
@@ -230,37 +234,140 @@ async def increase_promo_usage(code: str):
         await session.commit()
 
 
-async def send_email_notification(order_id: int, subject: str, message: str):
-    order = await get_order_by_id(order_id)
-    if order and order.email:
-        print(f"📧 EMAIL to {order.email}:")
-        print(f"   Subject: {subject}")
-        print(f"   Message: {message}")
-        # Здесь должна быть реальная отправка письма
+async def send_real_email(email: str, subject: str, message: str) -> bool:
+    if not email:
+        return False
+
+    smtp_host = config('SMTP_HOST', default='smtp.gmail.com')
+    smtp_port = config('SMTP_PORT', default=587, cast=int)
+    smtp_user = config('SMTP_USER', default='')
+    smtp_password = config('SMTP_PASSWORD', default='')
+    from_email = config('FROM_EMAIL', default='noreply@selfstorage.ru')
+
+    if not smtp_user or not smtp_password:
+        print(f"[ЗАГЛУШКА] EMAIL to {email}:")
+        print(f"Subject: {subject}")
+        print(f"Message: {message[:100]}...")
         return True
-    return False
+    
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = from_email
+        msg['To'] = email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(message, 'plain', 'utf-8'))
+
+        server = smtplib.SMTP(smtp_host, smtp_port)
+        server.starttls()
+        server.login(smtp_user, smtp_password)
+        server.send_message(msg)
+        server.quit()
+        
+        print(f"EMAIL отправлен: {email}")
+        return True
+    except Exception as e:
+        print(f"Ошибка отправки email: {e}")
+        print(f"[ЗАГЛУШКА] EMAIL to {email}:")
+        print(f"Subject: {subject}")
+        return False
 
 
 async def notify_order_expiring_soon(order_id: int, days_left: int):
     order = await get_order_by_id(order_id)
-    if order:
-        await send_email_notification(
-            order_id,
-            subject="Срок хранения скоро истекает",
-            message=f"Уважаемый {order.fio or 'клиент'}!\n\n"
-                   f"Ваш заказ №{order_id} на складе истекает через {days_left} дней.\n"
-                   f"Дата окончания: {order.end_date}\n\n"
-                   f"Если хотите продлить аренду, свяжитесь с нами."
+    if order and order.email:
+        await send_real_email(
+            email=order.email,
+            subject="Срок хранения скоро истекает - SelfStorage",
+            message=f"""Уважаемый {order.fio or 'клиент'}!
+
+   Напоминаем, что срок хранения вашего заказа №{order_id} истекает через {days_left} дней.
+
+   Детали заказа:
+   Бокс: {order.volume}
+   Дата окончания: {order.end_date}
+   Телефон: {order.phone}
+
+   Если вы хотите продлить аренду или забрать вещи, свяжитесь с нами:
+   Телефон: +7-918-714-58-30
+   Telegram: @selfstorage_bot
+
+С уважением,
+Команда SelfStorage
+"""
         )
 
 
 async def notify_order_expired(order_id: int):
     order = await get_order_by_id(order_id)
-    if order:
-        await send_email_notification(
-            order_id,
-            subject="Срок хранения истёк",
-            message=f"Уважаемый {order.fio or 'клиент'}!\n\n"
-                   f"Срок хранения вашего заказа №{order_id} истёк.\n"
-                   f"Пожалуйста, заберите вещи или свяжитесь с нами для продления аренды."
+    if order and order.email:
+        await send_real_email(
+            email=order.email,
+            subject="Срок хранения истёк - SelfStorage",
+            message=f"""Уважаемый {order.fio or 'клиент'}!
+
+   Срок хранения вашего заказа №{order_id} истёк.
+
+   Детали заказа:
+   Бокс: {order.volume}
+   Дата окончания: {order.end_date}
+   Телефон: {order.phone}
+
+   Пожалуйста, свяжитесь с нами для продления аренды или вывоза вещей:
+   Телефон: +7-918-714-58-30
+   Telegram: @selfstorage_bot
+
+С уважением,
+Команда SelfStorage
+"""
         )
+
+
+async def notify_order_delivered(order_id: int):
+    """Уведомить о доставке и приеме на склад"""
+    order = await get_order_by_id(order_id)
+    if order and order.email:
+        await send_real_email(
+            email=order.email,
+            subject="Ваш заказ принят на склад - SelfStorage",
+            message=f"""Уважаемый {order.fio or 'клиент'}!
+
+   Ваш заказ №{order_id} успешно доставлен и принят на склад!
+
+   Детали заказа:
+   Бокс: {order.volume}
+   Дата начала: {order.start_date}
+   Дата окончания: {order.end_date}
+   Сумма: {order.estimated_price} ₽
+
+   Ваши вещи находятся на складе по адресу:
+   г. Москва, ул. Складская, д. 15
+
+   В случае вопросов свяжитесь с нами:
+   Телефон: +7-918-714-58-30
+   Telegram: @selfstorage_bot
+
+С уважением,
+Команда SelfStorage
+"""
+        )
+
+
+async def check_and_notify_expiring_orders():
+    today = datetime.date.today()
+    orders = await get_orders_in_storage()
+    
+    for order in orders:
+        days_left = (order.end_date - today).days
+
+        if days_left in [30, 14, 7, 3, 1]:
+            await notify_order_expiring_soon(order.id, days_left)
+
+
+async def mark_and_notify_expired_orders():
+    expired_orders = await get_expired_orders()
+    
+    for order in expired_orders:
+        await mark_order_expired(order.id)
+        await notify_order_expired(order.id)
+    
+    return len(expired_orders)

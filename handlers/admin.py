@@ -10,7 +10,9 @@ from database.repository import (
     get_expired_orders,
     mark_order_delivered,
     mark_order_in_storage,
-    update_order
+    update_order,
+    get_order_by_id,
+    create_promo
 )
 from keyboards.admin import admin_main_kb 
 from aiogram.fsm.state import StatesGroup, State
@@ -171,12 +173,6 @@ async def admin_delivery_detail(callback: types.CallbackQuery):
                 InlineKeyboardButton(
                     text="Открыть карту",
                     url=map_link if map_link else f"https://yandex.ru/maps/?text=Москва"
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="Позвонить клиенту",
-                    url=f"tel:{order.phone}"
                 )
             ],
             [
