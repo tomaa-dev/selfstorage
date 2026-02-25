@@ -23,7 +23,6 @@ from keyboards.box import (
     generate_payment_kb,
     generate_payment_success_kb
 )
-<<<<<<< Updated upstream
 from database.repository import (
     create_order, 
     get_or_create_user, 
@@ -33,14 +32,9 @@ from database.repository import (
     update_order,
     send_real_email,
     notify_order_expiring_soon,
-    notify_order_expired
+    notify_order_expired,
+    mark_order_paid
 )
-=======
-from database.repository import (create_order, get_or_create_user,
-                                 get_valid_promo, increase_promo_usage,
-                                 mark_order_paid, get_order_by_id
-                                 )
->>>>>>> Stashed changes
 from keyboards.menu import main_menu_kb
 from decouple import config
 from config import BOXES, DELIVERY_SETTINGS, DB, PROMO_CODES, WAREHOUSE_ADDRESS
@@ -495,13 +489,11 @@ async def process_check_payment(callback: types.CallbackQuery, state: FSMContext
         return
 
     current_date = datetime.now().date()
-<<<<<<< Updated upstream
+
     await update_order(order_id, status="PAID", start_date=current_date)
 
     order = await get_order_by_id(order_id)
-=======
     await mark_order_paid(order_id)
->>>>>>> Stashed changes
 
     success_kb = InlineKeyboardMarkup(
         inline_keyboard=[

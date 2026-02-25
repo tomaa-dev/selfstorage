@@ -10,17 +10,12 @@ from database.repository import (
     get_expired_orders,
     mark_order_delivered,
     mark_order_in_storage,
-<<<<<<< Updated upstream
     update_order,
     get_order_by_id,
-    create_promo
-=======
+    create_promo,
     admin_check_expired_orders,
-    get_order_by_id,
     get_expired_status_orders,
-    update_order,
     get_orders_for_admin_list
->>>>>>> Stashed changes
 )
 from keyboards.admin import admin_main_kb 
 from aiogram.fsm.state import StatesGroup, State
