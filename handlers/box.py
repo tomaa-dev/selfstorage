@@ -281,7 +281,7 @@ async def process_promo(message: types.Message, state: FSMContext):
 
     if promo_code.lower() == "нет":
         await state.update_data(promo_code=None, discount_percent=0)
-        await process_final_summary(message, state)
+        await process_final_summary(message, state, message.from_user.id)
         return
 
     promo = await get_valid_promo(promo_code)
@@ -305,7 +305,7 @@ async def process_promo(message: types.Message, state: FSMContext):
         )
         return
 
-    await process_final_summary(message, state)
+    await process_final_summary(message, state, message.from_user.id)
 
 
 

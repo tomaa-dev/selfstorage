@@ -132,8 +132,9 @@ async def get_orders_in_storage():
         result = await session.execute(
             select(Order).where(
                 and_(
-                    Order.status == "IN_STORAGE",
-                    Order.end_date >= func.current_date()
+                    Order.status.in_(["PAID", "IN_STORAGE"]),
+                    Order.end_date >= today,
+                    Order.email.isnot(None)
                 )
             ).order_by(Order.end_date.asc())
         )
@@ -359,6 +360,206 @@ Telegram: @selfstorage_bot
 Команда SelfStorage"""
         )
 
+async def notify_order_overdue_30_days(order_id: int):
+    """Уведомление через 30 дней после просрочки"""
+    order = await get_order_by_id(order_id)
+    if order and order.email:
+        await send_real_email(
+            email=order.email,
+            subject=f"Вещи просрочены уже 30 дней! - SelfStorage",
+            message=f"""Уважаемый {order.fio or 'клиент'}!
+
+Ваши вещи находятся на складе уже 30 дней после окончания срока аренды.
+
+ВАЖНО: Согласно договору, вещи хранятся еще 6 месяцев по повышенному тарифу.
+После этого они будут утилизированы.
+
+Заказ №{order_id}
+Бокс: {order.volume}
+Дата окончания аренды: {order.end_date}
+
+Пожалуйста, свяжитесь с нами для решения вопроса:
+Телефон: +7-918-714-58-30
+Telegram: @selfstorage_bot
+
+С уважением,
+Команда SelfStorage"""
+        )
+
+
+async def notify_order_overdue_60_days(order_id: int):
+    """Уведомление через 60 дней после просрочки"""
+    order = await get_order_by_id(order_id)
+    if order and order.email:
+        await send_real_email(
+            email=order.email,
+            subject=f"Осталось 5 месяцев! - SelfStorage",
+            message=f"""Уважаемый {order.fio or 'клиент'}!
+
+Напоминаем, что ваши вещи просрочены уже 60 дней.
+
+Осталось 5 месяцев до утилизации вещей.
+
+Заказ №{order_id}
+Бокс: {order.volume}
+
+Срочно свяжитесь с нами!
+Телефон: +7-918-714-58-30
+
+С уважением,
+Команда SelfStorage"""
+        )
+
+
+async def notify_order_overdue_90_days(order_id: int):
+    """Уведомление через 90 дней после просрочки"""
+    order = await get_order_by_id(order_id)
+    if order and order.email:
+        await send_real_email(
+            email=order.email,
+            subject=f"Осталось 3 месяца! - SelfStorage",
+            message=f"""Уважаемый {order.fio or 'клиент'}!
+
+Ваши вещи просрочены уже 90 дней!
+
+ВНИМАНИЕ: Осталось 3 месяца до утилизации!
+
+Заказ №{order_id}
+Бокс: {order.volume}
+
+Не допустите потери вещей - свяжитесь с нами!
+Телефон: +7-918-714-58-30
+
+С уважением,
+Команда SelfStorage"""
+        )
+
+
+async def notify_order_overdue_120_days(order_id: int):
+    """Уведомление через 120 дней после просрочки"""
+    order = await get_order_by_id(order_id)
+    if order and order.email:
+        await send_real_email(
+            email=order.email,
+            subject=f"Осталось 2 месяца! - SelfStorage",
+            message=f"""Уважаемый {order.fio or 'клиент'}!
+
+Ваши вещи просрочены уже 4 месяца!
+
+Осталось 2 месяца до утилизации!
+
+Заказ №{order_id}
+
+Срочно свяжитесь с нами!
+Телефон: +7-918-714-58-30
+
+С уважением,
+Команда SelfStorage"""
+        )
+
+
+async def notify_order_overdue_150_days(order_id: int):
+    order = await get_order_by_id(order_id)
+    if order and order.email:
+        await send_real_email(
+            email=order.email,
+            subject=f"Остался 1 месяц! - SelfStorage",
+            message=f"""Уважаемый {order.fio or 'клиент'}!
+
+ОСТАЛСЯ 1 МЕСЯЦ!
+
+Ваши вещи будут утилизированы через 30 дней!
+
+Заказ №{order_id}
+
+Срочно свяжитесь с нами!
+Телефон: +7-918-714-58-30
+
+С уважением,
+Команда SelfStorage"""
+        )
+
+
+async def notify_order_about_to_be_disposed(order_id: int):
+    order = await get_order_by_id(order_id)
+    if order and order.email:
+        await send_real_email(
+            email=order.email,
+            subject=f"УТИЛИЗАЦИЯ ВЕЩЕЙ! - SelfStorage",
+            message=f"""Уважаемый {order.fio or 'клиент'}!
+
+ВНИМАНИЕ!
+
+Срок хранения ваших вещей истёк более 6 месяцев назад.
+
+К сожалению, мы вынуждены утилизировать ваши вещи.
+
+Заказ №{order_id}
+Бокс: {order.volume}
+
+Если это сообщение застало вас врасплох, срочно свяжитесь с нами:
+Телефон: +7-918-714-58-30
+Telegram: @selfstorage_bot
+
+С уважением,
+Команда SelfStorage"""
+        )
+
+
+async def check_and_notify_overdue_orders():
+    from datetime import timedelta
+    import datetime
+    
+    today = datetime.date.today()
+    expired_orders = await get_expired_orders()
+    
+    for order in expired_orders:
+        days_expired = (today - order.end_date).days
+
+        if not order.email:
+            continue
+
+        if days_expired == 30:
+            await notify_order_overdue_30_days(order.id)
+        elif days_expired == 60:
+            await notify_order_overdue_60_days(order.id)
+        elif days_expired == 90:
+            await notify_order_overdue_90_days(order.id)
+        elif days_expired == 120:
+            await notify_order_overdue_120_days(order.id)
+        elif days_expired == 150:
+            await notify_order_overdue_150_days(order.id)
+        elif days_expired >= 180:
+            # Утилизация
+            await notify_order_about_to_be_disposed(order.id)
+            await update_order(order.id, status="DISPOSED")
+            print(f"🗑️ Заказ #{order.id} помечен как утилизированный")
+
+
+async def mark_expired_orders_auto():
+    import datetime
+    
+    today = datetime.date.today()
+    
+    async with async_session() as session:
+        result = await session.execute(
+            select(Order).where(
+                and_(
+                    Order.status.in_(["PAID", "IN_STORAGE"]),
+                    Order.end_date < today
+                )
+            )
+        )
+        expired_orders = result.scalars().all()
+        
+        for order in expired_orders:
+            await session.execute(
+                update(Order).where(Order.id == order.id).values(status="EXPIRED")
+            )
+            print(f"Заказ #{order.id} помечен как просроченный")
+        
+        await session.commit()
+
 
 async def check_and_notify_expiring_orders():
     today = datetime.date.today()
@@ -367,7 +568,7 @@ async def check_and_notify_expiring_orders():
     for order in orders:
         days_left = (order.end_date - today).days
 
-        if days_left in [30, 14, 7, 3, 1]:
+        if days_left in [30, 14, 7, 3]:
             await notify_order_expiring_soon(order.id, days_left)
 
 

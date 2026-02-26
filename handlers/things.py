@@ -5,7 +5,8 @@ from database.repository import (
     get_or_create_user, 
     get_user_orders, 
     get_order_by_id,
-    update_order
+    update_order,
+    send_real_email
 )
 from keyboards.menu import main_menu_kb
 from keyboards.things import (
@@ -14,10 +15,15 @@ from keyboards.things import (
     confirm_extend_kb,
     item_details_kb,
     storage_info_kb,
-    empty_items_kb
+    empty_items_kb,
+    pickup_delivery_kb,
+    confirm_pickup_kb
 )
 from datetime import datetime, timedelta
-from config import BOXES
+from config import BOXES, WAREHOUSE_ADDRESS, DELIVERY_SETTINGS, MANAGER_TG_ID
+import qrcode
+import tempfile
+import os
 
 
 router = Router()
@@ -26,6 +32,25 @@ router = Router()
 class ExtendOrder(StatesGroup):
     select_period = State()
     confirm = State()
+
+
+def generate_qr_code(data):
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+    
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+    img.save(temp_file.name, 'PNG')
+    temp_file.close()
+    
+    return temp_file.name
 
 
 @router.message(F.text == "Список вещей")
@@ -84,22 +109,275 @@ async def my_items(message: types.Message):
             promo_info = f"\nПромокод: {order.promo_code}"
         
         text += (
-            f"{'='*30}\n"
             f"Заказ #{order.id}\n"
             f"{content_type}\n"
             f"Период: {start_date} - {end_date}\n"
             f"Стоимость: {order.estimated_price} ₽"
             f"{days_left}"
             f"{delivery_info}"
-            f"{promo_info}\n"
+            f"{promo_info}\n\n"
         )
-    
-    text += f"\n{'='*30}"
+
 
     await message.answer(
         text,
         reply_markup=items_list_kb(active_orders[-1].id)
     )
+
+@router.callback_query(F.data.startswith("pickup_full_"))
+async def pickup_full(callback: types.CallbackQuery):
+    order_id = int(callback.data.replace("pickup_full_", ""))
+    
+    order = await get_order_by_id(order_id)
+    
+    if not order:
+        await callback.message.answer("Заказ не найден")
+        await callback.answer()
+        return
+    
+    await callback.message.answer(
+        f"Забор вещей со склада\n\n"
+        f"Заказ #{order.id}\n"
+        f"Бокс: {order.volume}\n\n"
+        "Выберите способ получения вещей:",
+        reply_markup=pickup_delivery_kb(order_id)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("pickup_partial_"))
+async def pickup_partial(callback: types.CallbackQuery):
+    order_id = int(callback.data.replace("pickup_partial_", ""))
+    
+    order = await get_order_by_id(order_id)
+    
+    if not order:
+        await callback.message.answer("Заказ не найден")
+        await callback.answer()
+        return
+    
+    await callback.message.answer(
+        f"Частичный забор вещей\n\n"
+        f"Заказ #{order.id}\n"
+        f"Бокс: {order.volume}\n\n"
+        "Вы можете забрать часть вещей, остальные будут храниться до конца срока аренды.\n\n"
+        "Выберите способ получения:",
+        reply_markup=pickup_delivery_kb(order_id)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("pickup_delivery_"))
+async def pickup_delivery(callback: types.CallbackQuery):
+    order_id = int(callback.data.replace("pickup_delivery_", ""))
+    
+    order = await get_order_by_id(order_id)
+    
+    if not order:
+        await callback.message.answer("Заказ не найден")
+        await callback.answer()
+        return
+
+    base_delivery = DELIVERY_SETTINGS.get('pickup_service_base', 500)
+    price_per_km = DELIVERY_SETTINGS.get('pickup_per_km', 15)
+    
+    await callback.message.answer(
+        f"Доставка вещей на дом\n\n"
+        f"Заказ #{order.id}\n"
+        f"Бокс: {order.volume}\n\n"
+        f"Адрес доставки: {order.address}\n\n"
+        f"Стоимость доставки:\n"
+        f"База: {base_delivery} ₽ + {price_per_km} ₽/км\n\n"
+        f"Точную стоимость вам сообщит менеджер при подтверждении.\n\n"
+        "Менеджер свяжется с вами для уточнения деталей и подтверждения заказа.",
+        reply_markup=confirm_pickup_kb(order_id, "delivery")
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("pickup_self_"))
+async def pickup_self(callback: types.CallbackQuery):
+    order_id = int(callback.data.replace("pickup_self_", ""))
+    
+    order = await get_order_by_id(order_id)
+    
+    if not order:
+        await callback.message.answer("Заказ не найден")
+        await callback.answer()
+        return
+
+    qr_data = f"SELFSTORAGE_PICKUP:{order_id}:{order.fio or 'CLIENT'}"
+    qr_path = generate_qr_code(qr_data)
+    
+    await callback.message.answer_photo(
+        photo=types.FSInputFile(qr_path),
+        caption=(
+            f"Самовывоз со склада\n\n"
+            f"Заказ #{order.id}\n"
+            f"Бокс: {order.volume}\n\n"
+            f"Адрес склада:\n{WAREHOUSE_ADDRESS}\n\n"
+            f"Предъявите QR-код сотруднику склада для получения вещей.\n\n"
+            f"Время работы: Ежедневно с 9:00 до 21:00"
+        )
+    )
+
+    if order.email:
+        await send_real_email(
+            email=order.email,
+            subject=f"QR-код для получения вещей - Заказ #{order.id}",
+            message=f"""Уважаемый {order.fio or 'клиент'}!
+			Вы забрали вещи со склада!
+			Детали заказа:
+			Заказ №{order.id}
+			Бокс: {order.volume}
+			Адрес склада: {WAREHOUSE_ADDRESS}
+			QR-код для получения вещей был отправлен в этом чате.
+			С уважением,
+			Команда SelfStorage"""
+        )
+    
+    try:
+        os.unlink(qr_path)
+    except:
+        pass
+    
+    await callback.message.answer(
+        "Вы можете забрать вещи со склада.\n\n"
+        "Если у вас остались вещи на хранении, они будут храниться до конца срока аренды.",
+        reply_markup=main_menu_kb(callback.from_user.id)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("pickup_delivery_home_"))
+async def pickup_delivery_home(callback: types.CallbackQuery):
+    order_id = int(callback.data.replace("pickup_delivery_home_", ""))
+    
+    order = await get_order_by_id(order_id)
+    
+    if not order:
+        await callback.message.answer("Заказ не найден")
+        await callback.answer()
+        return
+    
+
+    qr_data = f"SELFSTORAGE_PICKUP:{order_id}:{order.fio or 'CLIENT'}"
+    qr_path = generate_qr_code(qr_data)
+
+    await callback.message.answer_photo(
+        photo=types.FSInputFile(qr_path),
+        caption=(
+            f"Доставка вещей\n\n"
+            f"Заказ #{order.id}\n"
+            f"Бокс: {order.volume}\n\n"
+            f"Адрес доставки: {order.address}\n\n"
+            f"QR-код- для идентификации заказа при получении.\n\n"
+            f"Менеджер свяжется с вами для подтверждения времени доставки."
+        )
+    )
+    
+    try:
+        os.unlink(qr_path)
+    except:
+        pass
+
+    from config import MANAGER_TG_ID
+    for manager_id in MANAGER_TG_ID:
+        try:
+            await callback.message.bot.send_message(
+                manager_id,
+                f"Запрос доставки\n\n"
+                f"Заказ #{order.id}\n"
+                f"Клиент: {order.fio or 'Не указано'}\n"
+                f"Телефон: {order.phone}\n"
+                f"Адрес: {order.address}\n"
+                f"Бокс: {order.volume}\n"
+                f"Тип: Доставка на дом"
+            )
+        except Exception:
+            pass
+
+    if order.email:
+        await send_real_email(
+            email=order.email,
+            subject=f"Доставка вещей - Заказ #{order.id}",
+            message=f"""Уважаемый {order.fio or 'клиент'}!
+                Вы запросили доставку вещей на дом!
+                Детали заказа: Заказ №{order.id} Бокс: {order.volume} Адрес доставки: {order.address}
+                Менеджер свяжется с вами в ближайшее время для подтверждения времени доставки.
+                С уважением, Команда SelfStorage""" 
+        )
+
+        await callback.message.answer(
+            "Запрос на доставку оформлен!\n\n"
+            "Менеджер свяжется с вами для подтверждения времени доставки.\n\n"
+            "Если у вас остались вещи на хранении, они будут храниться до конца срока аренды.",
+            reply_markup=main_menu_kb(callback.from_user.id)
+        )
+        await callback.answer()
+
+
+@router.callback_query(F.data.startswith("confirm_pickup_"))
+async def confirm_pickup(callback: types.CallbackQuery):
+    parts = callback.data.split("_")
+    order_id = int(parts[2])
+    pickup_type = parts[3]
+    
+    order = await get_order_by_id(order_id)
+    
+    if not order:
+        await callback.message.answer("❌ Заказ не найден")
+        await callback.answer()
+        return
+
+    qr_data = f"SELFSTORAGE_PICKUP:{order_id}:{order.fio or 'CLIENT'}"
+    qr_path = generate_qr_code(qr_data)
+    
+    if pickup_type == "self":
+        address_text = WAREHOUSE_ADDRESS
+        action_text = "самовывоз"
+    else:
+        address_text = order.address
+        action_text = "доставка"
+    
+    await callback.message.answer_photo(
+        photo=types.FSInputFile(qr_path),
+        caption=(
+            f"Подтверждение забора вещей\n\n"
+            f"Заказ #{order.id}\n"
+            f"Бокс: {order.volume}\n\n"
+            f"Адрес: {address_text}\n\n"
+            f"Предъявите QR-код для получения вещей.\n\n"
+            f"Время работы склада: Ежедневно 9:00-21:00"
+        )
+    )
+    
+    try:
+        os.unlink(qr_path)
+    except:
+        pass
+
+    await update_order(order_id, status="COMPLETED")
+    
+    await callback.message.answer(
+        f"Забор вещей подтверждён!\n\n"
+        f"Тип: {action_text}\n"
+        f"Заказ №{order.id}\n\n"
+        "Спасибо, что использовали SelfStorage!",
+        reply_markup=main_menu_kb(callback.from_user.id)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("cancel_pickup_"))
+async def cancel_pickup(callback: types.CallbackQuery):
+    order_id = int(callback.data.replace("cancel_pickup_", ""))
+    
+    await callback.message.answer(
+        "Забор вещей отменён",
+        reply_markup=items_list_kb(order_id)
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("extend_order_"))
@@ -241,8 +519,7 @@ async def item_size(callback: types.CallbackQuery):
         await callback.message.answer("Заказ не найден")
         await callback.answer()
         return
-    
-    # Находим информацию о боксе
+
     box_info = ""
     for box in BOXES:
         if box["name"] in order.volume:
@@ -285,7 +562,7 @@ async def item_dates(callback: types.CallbackQuery):
         days_left = str(days) if days > 0 else "0"
     
     await callback.message.answer(
-        f"Даты хранения</b>\n\n"
+        f"Даты хранения\n\n"
         f"Заказ #{order.id}\n"
         f"Начало: {start_date}\n"
         f"Окончание: {end_date}\n"
@@ -365,7 +642,7 @@ async def back_to_main(callback: types.CallbackQuery):
 @router.callback_query(F.data == "storage_prepare")
 async def storage_prepare(callback: types.CallbackQuery):
     await callback.message.answer(
-        "Как подготовить вещи к хранению</b>\n\n"
+        "Как подготовить вещи к хранению\n\n"
         "1. Упакуйте вещи в коробки или мешки\n"
         "2. Очистите вещи от грязи и пыли\n"
         "3. Используйте пломбы или замки\n"
@@ -395,7 +672,7 @@ async def storage_delivery(callback: types.CallbackQuery):
 @router.callback_query(F.data == "storage_security")
 async def storage_security(callback: types.CallbackQuery):
     await callback.message.answer(
-        "Безопасность хранения</b>\n\n"
+        "Безопасность хранения\n\n"
         "Охрана 24/7\n"
         "Видеонаблюдение\n"
         "Пожарная сигнализация\n"
@@ -424,8 +701,8 @@ async def storage_rates(callback: types.CallbackQuery):
         )
     
     text += (
-        "Самовывоз:</b> скидка 20%\n"
-        f"Доставка:</b> {DELIVERY_SETTINGS.get('pickup_service_base', 500)} ₽ "
+        "Самовывоз: скидка 20%\n"
+        f"Доставка: {DELIVERY_SETTINGS.get('pickup_service_base', 500)} ₽ "
         f"+ {DELIVERY_SETTINGS.get('pickup_per_km', 15)} ₽/км\n\n"
         "Промокоды:\n"
         "Применяйте промокоды при оформлении заказа для получения скидки."
@@ -450,17 +727,6 @@ async def request_call(callback: types.CallbackQuery):
         "Мы работаем ежедневно с 9:00 до 21:00"
     )
     await callback.answer()
-
-    for manager_id in MANAGER_TG_ID:
-        try:
-            await callback.message.bot.send_message(
-                manager_id,
-                f"Запрос обратного звонка\n\n"
-                f"Пользователь: @{callback.from_user.username or 'неизвестен'}\n"
-                f"ID пользователя: {callback.from_user.id}"
-            )
-        except Exception:
-            pass
 
 
 @router.callback_query(F.data == "pick_box")

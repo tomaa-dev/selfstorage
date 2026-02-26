@@ -7,27 +7,45 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 
 TG_TOKEN = config('TELEGRAM_TOKEN')
-
-
 scheduler = AsyncIOScheduler()
 
+
 async def run_daily_checks():
-    from database.repository import check_and_notify_expiring_orders, mark_and_notify_expired_orders
+    from database.repository import (
+        check_and_notify_expiring_orders, 
+        mark_and_notify_expired_orders,
+        mark_expired_orders_auto,
+        check_and_notify_overdue_orders
+    )
     
     print("Запуск проверки заказов...")
     
     try:
         await check_and_notify_expiring_orders()
-        print("Напоминания отправлены")
+        print("Напоминания об истекающих заказах отправлены")
     except Exception as e:
         print(f"Ошибка при отправке напоминаний: {e}")
 
     try:
+        await mark_expired_orders_auto()
+        print("Просроченные заказы помечены")
+    except Exception as e:
+        print(f"Ошибка при пометке просроченных заказов: {e}")
+
+    try:
         expired_count = await mark_and_notify_expired_orders()
         if expired_count > 0:
-            print(f"Просрочено {expired_count} заказов")
+            print(f"Обработано просроченных заказов: {expired_count}")
     except Exception as e:
-        print(f"Ошибка при проверке просроченных заказов: {e}")
+        print(f"Ошибка при обработке просроченных заказов: {e}")
+
+    try:
+        await check_and_notify_overdue_orders()
+        print("Уведомления о просроченных заказах отправлены")
+    except Exception as e:
+        print(f"Ошибка при отправке уведомлений о просрочке: {e}")
+    
+    print("Ежедневная проверка завершена")
 
 
 async def main():

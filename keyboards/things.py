@@ -1,9 +1,30 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    InlineKeyboardMarkup, 
+    InlineKeyboardButton
+)
 
 
 def items_list_kb(order_id: int):
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Забрать вещи",
+                    callback_data=f"pickup_full_{order_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Забрать часть вещей",
+                    callback_data=f"pickup_partial_{order_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Заказать доставку",
+                    callback_data=f"pickup_delivery_{order_id}"
+                )
+            ],
             [
                 InlineKeyboardButton(
                     text="Продлить аренду",
@@ -155,20 +176,52 @@ def empty_items_kb():
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Арендовать бокс",
-                    callback_data="pick_box"
-                )
-            ],
-            [
-                InlineKeyboardButton(
                     text="Заказать звонок",
                     callback_data="request_call"
                 )
             ],
+        ]
+    )
+
+
+def pickup_delivery_kb(order_id):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Главное меню",
-                    callback_data="back_to_main"
+                    text="Самовывоз со склада",
+                    callback_data=f"pickup_self_{order_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Доставка на дом",
+                    callback_data=f"pickup_delivery_home_{order_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Назад",
+                    callback_data=f"back_to_pickup_{order_id}"
+                )
+            ]
+        ]
+    )
+
+
+def confirm_pickup_kb(order_id: int, pickup_type: str):
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Подтвердить",
+                    callback_data=f"confirm_pickup_{order_id}_{pickup_type}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Отмена",
+                    callback_data=f"cancel_pickup_{order_id}"
                 )
             ]
         ]
