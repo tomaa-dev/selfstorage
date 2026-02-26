@@ -8,11 +8,6 @@ async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-
-async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
     async with async_session() as session:
         await _ensure_promo(session, "storage2022", 20,
                             datetime.date(2026, 2, 1),
